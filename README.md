@@ -1,5 +1,7 @@
 # mc_rtde
-Interface between [Universal robots](https://www.universal-robots.com/) and [mc_rtc](https://jrl-umi3218.github.io/mc_rtc). Provides connectivity with [UR5e](https://www.universal-robots.com/products/ur5-robot/) and [UR10](https://www.universal-robots.com/products/ur10e/) robots.
+Interface between [Universal robots](https://www.universal-robots.com/) and [mc_rtc](https://jrl-umi3218.github.io/mc_rtc). Provides connectivity with [UR5e | UR7e](https://www.universal-robots.com/products/ur5-robot/) and [UR10](https://www.universal-robots.com/products/ur10e/) robots.
+
+> **Please note that it has not been tested with the latest Polyscope version (5.24).**
 
 ## 1. Required dependencies
 
@@ -7,7 +9,7 @@ Interface between [Universal robots](https://www.universal-robots.com/) and [mc_
 - ur10
   - robot_module : https://github.com/isri-aist/mc_ur10
   - description : https://github.com/isri-aist/mc_ur10_description
-- ur5e
+- ur5e | ur7e
   - robot_module : https://github.com/isri-aist/mc_ur5e
   - description : https://github.com/isri-aist/mc_ur5e_description
 - [ur_rtde library](https://gitlab.com/sdurobotics/ur_rtde)
@@ -16,7 +18,7 @@ Interface between [Universal robots](https://www.universal-robots.com/) and [mc_
 
 ### ur_rtde library
 
-- From PPA : 
+- From PPA :
 
 ```
 sudo add-apt-repository ppa:sdurobotics/ur-rtde
@@ -24,7 +26,7 @@ sudo apt-get update
 sudo apt install librtde librtde-dev
 ```
 
-- From Source : 
+- From Source :
 ```
 $ git clone https://gitlab.com/sdurobotics/ur_rtde.git
 $ cd ur_rtde
@@ -59,7 +61,7 @@ Edit `/etc/security/limits.conf` by adding the following line :
 USERNAME - memlock 1000000000
 ```
 
-Then log-out and log-in or reboot, to confirm the new limit : 
+Then log-out and log-in or reboot, to confirm the new limit :
 
 ```bash
 ulimit -l
@@ -99,7 +101,7 @@ Where <mc_rtc_configuration_file.yaml> is based on (e.g).
 Your mc_rtc configuration file (`~/.config/mc_rtc/mc_rtc.yaml`) should contain the following lines:
 
 ```yaml
-MainRobot: UR5e # or UR10
+MainRobot: UR5e # or UR10 / UR7e
 Enabled: YourController
 Timestep: 0.001
 
@@ -113,6 +115,9 @@ RTDE:
   ur5e: # Name of the robot in the controller
     ip: "localhost"
     driver: "ur_rtde" # Can be: "ur_rtde" (>=CB3) or "ur_modern_driver" (<=CB2). Default: ur_rtde
+
+  ur7e: # Name of the robot in the controller
+    ip: "localhost"
 
   ur10: # Name of the robot in the controller
     ip: "localhost"
@@ -150,7 +155,7 @@ sudo ldconfig
 
 * Segfault
 
-We noticed that a segfault happens when using `rmw_cyclonedds_cpp` as RMW. 
+We noticed that a segfault happens when using `rmw_cyclonedds_cpp` as RMW.
 
 Please consider using the following one :
 

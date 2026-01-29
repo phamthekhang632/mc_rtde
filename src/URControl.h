@@ -13,7 +13,6 @@
 
 namespace mc_rtde
 {
-const std::vector<std::string> ROBOT_NAMES = {"ur5e", "ur10"};
 
 template<ControlMode cm>
 struct URControlLoop

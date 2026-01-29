@@ -7,5 +7,8 @@ RTDE:
     ip: "localhost"
     driver: "ur_rtde" # Can be: "ur_rtde" (>=CB3) or "ur_modern_driver" (<=CB2). Default: ur_rtde
 
+  ur7e: # Name of the robot in the controller
+    ip: "localhost"
+
   ur10: # Name of the robot in the controller
     ip: "localhost"
