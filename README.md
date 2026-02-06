@@ -82,7 +82,7 @@ $ sudo ldconfig
 To use the interface and connect to a real robot run
 
 ```
-$ MCControlRtde --help 
+$ MCControlRtde --help
 MCControlRTDE options:
   --help                Display help message
   -f [ --conf ] arg     Configuration file
