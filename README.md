@@ -87,7 +87,7 @@ MCControlRTDE options:
   --help                Display help message
   -f [ --conf ] arg     Configuration file
 
-see etc/mc_rtc_ur.yaml for ur_rtde configuration
+see etc/mc_rtc_ur.yaml for mc_rtde configuration example
 
 $ MCControlRtde -f <mc_rtc_configuration_file.conf>
 ```
