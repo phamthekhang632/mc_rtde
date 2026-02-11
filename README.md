@@ -69,7 +69,7 @@ ulimit -l
 
 ###  The path set to the ROS library
 
-`MCControlRtde` will not pick up ROS libraries. If you're using `mc_rtc`'s ROS plugin, create a file with content: `/etc/ld.so.conf.d/ros.conf`
+`MCControlRtde` will not pick up ROS libraries. If you're using `mc_rtc`'s ROS plugin, create this file `/etc/ld.so.conf.d/ros.conf` with the following content:
 ```
 /opt/ros/${ROS_DISTRO}/lib
 ```
@@ -83,15 +83,13 @@ To use the interface and connect to a real robot run
 
 ```
 $ MCControlRtde --help
+MCControlRTDE options:
+  --help                Display help message
+  -f [ --conf ] arg     Configuration file
 
- MCControlRtde options:
-   --help                                display help message
-   -h [ --host ] arg (=ur5e)             connection host, robot name {ur5e, ur10} or
-                                         "simulation"
-   -f [ --conf ] arg (=/usr/local/etc/mc_rtde/mc_rtc_ur.yaml)
-                                         configuration file
+see etc/mc_rtc_ur.yaml for mc_rtde configuration example
 
-$ MCControlRtde -h <robot_hostname> -f <mc_rtc_configuration_file.conf>
+$ MCControlRtde -f <mc_rtc_configuration_file.conf>
 ```
 
 Where <mc_rtc_configuration_file.yaml> is based on (e.g).
