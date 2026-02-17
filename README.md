@@ -135,7 +135,7 @@ $ MCControlRtde -f conf.yaml
 
 ## Toubleshooting
 
-* Known issue
+### Known issue
 
 It may happen that some libraries are not found due to the high priviligies given for real-time scheduling. To overcome it, please consider running the following commands :
 
@@ -151,7 +151,7 @@ Then run the following command :
 sudo ldconfig
 ```
 
-* Segfault
+### Segfault
 
 We noticed that a segfault happens when using `rmw_cyclonedds_cpp` as RMW.
 
@@ -160,3 +160,15 @@ Please consider using the following one :
 ```bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ```
+
+### PolyScope 5
+*This is tested with `PolyScope 5.25`, but `5.23` and `5.24` versions of the software may run into the same issue.*
+
+Some of the services used to connection might be disable by default. Consider following these steps on the teach pendant to enable them.
+1. Make sure you are in [Local Control](https://www.universal-robots.com/manuals/EN/HTML/SW5_25/Content/prod-usr-man/software/PolyScope/content/hamburger_menu_g5/System_remote_en.htm?Highlight=local%20control) mode.
+2. Go to [Hamburger menu > Settings > Security > Services](https://www.universal-robots.com/manuals/EN/HTML/SW5_25/Content/prod-usr-man/software/PolyScope/content/hamburger_menu_g5/Security_services_en.htm) and enable these services:
+   - Dashboard Server
+   - Primary Client Interface
+   - Secondary Client Interface
+   - Real-Time Client Interfcae
+   - Real-Time Data Exchange (RTDE)
