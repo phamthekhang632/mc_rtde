@@ -13,6 +13,7 @@ Interface between [Universal robots](https://www.universal-robots.com/) and [mc_
   - robot_module : https://github.com/isri-aist/mc_ur5e
   - description : https://github.com/isri-aist/mc_ur5e_description
 - [ur_rtde library](https://gitlab.com/sdurobotics/ur_rtde)
+- [ur_modern_driver](https://github.com/jrl-umi3218/ur_modern_driver)
 
 ## 2. Install dependencies
 
@@ -33,6 +34,18 @@ $ cd ur_rtde
 $ mkdir build
 $ cd build
 $ cmake -DPYTHON_BINDINGS:BOOL=OFF ..
+$ make
+$ sudo make install
+```
+
+### ur_modern_driver library
+
+```
+$ git clone https://github.com/jrl-umi3218/ur_modern_driver
+$ cd ur_modern_driver
+$ mkdir build
+$ cd build
+$ cmake ..
 $ make
 $ sudo make install
 ```
