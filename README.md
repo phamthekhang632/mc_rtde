@@ -41,7 +41,7 @@ $ sudo make install
 ### ur_modern_driver library
 
 ```
-$ git clone https://github.com/jrl-umi3218/ur_modern_driver 
+$ git clone https://github.com/jrl-umi3218/ur_modern_driver
 $ cd ur_modern_driver
 $ mkdir build
 $ cd build
