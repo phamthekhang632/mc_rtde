@@ -19,7 +19,7 @@ namespace mc_rtde
 struct ControlLoopDataBase
 {
 
-  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr){};
+  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr) {};
 
   ControlMode cm_;
   mc_control::MCGlobalController * controller_;
@@ -31,7 +31,7 @@ struct ControlLoopDataBase
 template<ControlMode cm>
 struct ControlLoopData : public ControlLoopDataBase
 {
-  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
+  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
 
   std::vector<URControlLoopPtr<cm>> * urs;
 };
@@ -46,29 +46,33 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   loop_data->ur_threads_ = new std::vector<std::thread>();
   auto & controller = *loop_data->controller_;
 
-  double cycle_s = rtdeConfig("RobotTimestep");
-  double controller_s = controller.controller().timeStep;
-  size_t cycle_ns = cycle_s * 1e9;
+  double cycle_s = rtdeConfig("RobotTimestep"); // urx timestep
+  double controller_s = controller.controller().timeStep; // mc_rtc timestep
+
+  // ---------- CHECK TIMESTEP COMPATIBILITY BETWEEN MC_RTC AND URX --------------------------------
+  size_t cycle_ns = cycle_s * 1e9; // convert to nanosec
   size_t controller_ns = controller_s * 1e9;
-  if(controller_ns < cycle_ns)
+  if(controller_ns < cycle_ns) // mc_rtc running faster than urx
   {
     mc_rtc::log::error_and_throw(
         "[mc_rtde] mc_rtc cannot run faster than the robot's control frequency (RobotTimeStep= {}ms, Timestep={}ms)",
         cycle_s, controller_s);
   }
-  if(controller_ns % cycle_ns != 0)
+  if(controller_ns % cycle_ns != 0) // mc_rtc not in sync with urx
   {
     mc_rtc::log::error_and_throw("[mc_rtde] mc_rtc timestep must be a multiple of the robot's control loop frequency "
                                  "(RobotTimeStep= {}ms, Timestep={}ms)",
                                  cycle_s, controller_s);
   }
 
-  size_t n_steps = controller_ns / cycle_ns;
-  size_t freq = std::ceil(1 / controller_s);
-  size_t robot_freq = std::ceil(1 / cycle_s);
+  size_t n_steps = controller_ns / cycle_ns; // period ratio between mc_rtc and urx
+  size_t freq = std::ceil(1 / controller_s); // frequency of mc_rtc
+  size_t robot_freq = std::ceil(1 / cycle_s); // .............urx
   mc_rtc::log::info(
       "[mc_rtde] mc_rtc running at {}Hz, robot running at {}Hz, will compute commands every {} robot control step",
       freq, robot_freq, n_steps);
+
+  // ---------- INIT REAL ROBOTS FROM CONTROLLER --------------------------------------------------------
   auto & robots = controller.controller().robots();
   // Initialize all real robots
   for(size_t i = controller.realRobots().size(); i < robots.size(); ++i)
@@ -92,9 +96,11 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
     if(rtdeConfig.has(robot.name()))
     {
+      // Get ip and driver (default driver = ur_rtde)
       std::string ip = rtdeConfig(robot.name())("ip");
       auto driverName = rtdeConfig(robot.name())("driver", std::string{"ur_rtde"});
       auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
+
       ur_init_thread.emplace_back(
           [&, ip]()
           {
@@ -128,13 +134,24 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   }
 
   controller.init(robots.robot().encoderValues());
-  std::vector<double> qIn(6, 0.0);
-  for(int i = 0; i < 6; ++i)
+
+  for(auto & robot : robots)
   {
-    qIn[i] = robots.robot().mbc().q[robots.robot().jointIndexInMBC(i)][0];
+    mc_rtc::log::info("Robot: {}", robot.name());
+    int dof = 0;
+    for(const auto & joint : robot.mb().joints())
+    {
+      if(joint.dof() == 1 && !joint.isMimic())
+      {
+        dof++;
+        // ERROR: robotiq_arg85 finger_joint is always 0.0
+        mc_rtc::log::info("\t{}: {:.5f}", joint.name(), robot.mbc().q[robot.jointIndexByName(joint.name())][0]);
+      }
+    }
+    // mc_rtc::log::info("DOF of {} is {}\n", robot.name(), robot.refJointOrder().size());
+    mc_rtc::log::info("DOF of {} is {}\n", robot.name(), dof);
   }
-  std::cout << "qIn is " << qIn[0] << " " << qIn[1] << " " << qIn[2] << " " << qIn[3] << " " << qIn[4] << " " << qIn[5]
-            << std::endl;
+
   controller.running = true;
   controller.controller().gui()->addElement(
       {"RTDE"}, mc_rtc::gui::Button("Stop controller", [&controller]() { controller.running = false; }));
@@ -150,8 +167,9 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     // until the first control command has been computed (by MCGlobalController::run)
     loop_data->ur_threads_->emplace_back(
         [&]() { ur->controlThread(controller, startMutex, startCV, startControl, controller.running); });
+    loop_data->ur_threads_->emplace_back(
+        [&]() { ur->gripperThread(controller, startMutex, startCV, startControl, controller.running); });
   }
-
   // Create main mc_rtc control thread:
   // - get the latest sensor readings from the robots
   // - run mc_rtc controller (MCGlobalController::run)
@@ -164,8 +182,10 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   loop_data->controller_run_ = new std::thread(
       [loop_data, n_steps, &interrupt]()
       {
+        // TODO: combine
         auto controller_ptr = loop_data->controller_;
         auto & controller = *controller_ptr;
+
         auto & urs_ = *loop_data->urs;
         std::mutex controller_run_mtx;
         std::timespec tv;
@@ -273,6 +293,7 @@ void run(void * data, const bool & interrupt)
 
 void * init(int argc, char * argv[], uint64_t & cycle_ns, const bool & interrupt)
 {
+  // ---------- DECLARE OPTIONS & CHECK CONFIG VALIDITY --------------------------------------------
   std::string conf_file = "";
   po::options_description desc("MCControlRTDE options");
   // clang-format off
@@ -298,6 +319,8 @@ void * init(int argc, char * argv[], uint64_t & cycle_ns, const bool & interrupt
     mc_rtc::log::error_and_throw<std::runtime_error>(
         "No RTDE section in the configuration, see etc/mc_rtc_ur.yaml for an example");
   }
+
+  // ---------- EXTRACT CONFIG: ControlMode, Driver, RobotTimestep ---------------------------------
   auto urConfig = gconfig.config("RTDE");
   ControlMode cm = urConfig("ControlMode", ControlMode::Position);
   auto driverConfig = urConfig("Driver", std::string{"ur_rtde"});
@@ -317,6 +340,9 @@ void * init(int argc, char * argv[], uint64_t & cycle_ns, const bool & interrupt
   }
   mc_rtc::log::info("RobotTimestep is: {}s (frequency={:.2f}Hz), the RT thread will run at this frequency", cycle_s,
                     1 / cycle_s);
+
+  // ---------- TRY WITH APPROPRIATE ControlMode
+  // -------------------------------------------------------------------------------------
   try
   {
     switch(cm)

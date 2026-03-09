@@ -31,11 +31,18 @@ struct URControlLoop
                      bool & start,
                      bool & running);
 
+  void gripperThread(mc_control::MCGlobalController & controller,
+                     std::mutex & startM,
+                     std::condition_variable & startCV,
+                     bool & start,
+                     bool & running);
+
 private:
   std::string name_;
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
   rbd::MultiBodyConfig command_;
+  float cached_gripper_pos_ = 0.0f;
   size_t control_id_ = 0;
   size_t prev_control_id_ = 0;
   double delay_ = 0;
@@ -51,6 +58,7 @@ private:
   // - the method URControlLoop::updateSensors called from the controller_run thread (before MCGlobalController::run)
   mutable std::mutex updateSensorsMutex_;
   mutable std::mutex updateControlMutex_;
+  std::mutex gripperPosMutex_;
 
   std::vector<double> sensorsBuffer_ = std::vector<double>(6, 0.0);
 };
@@ -131,6 +139,13 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   auto & robot = controller.robots().robot(name_);
   command_ = robot.mbc();
 
+  if(controller.robots().hasRobot("robotiq_arg85"))
+  {
+    auto & gripper_robot = controller.robots().robot("robotiq_arg85");
+    std::lock_guard<std::mutex> glock(gripperPosMutex_);
+    cached_gripper_pos_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
+  }
+
   control_id_++;
 }
 
@@ -163,6 +178,31 @@ void URControlLoop<cm>::controlThread(mc_control::MCGlobalController & controlle
     using namespace std::chrono;
     auto time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     control_.control(*driverBridge_, controller.robots().robot(name_), command);
+  }
+}
+
+template<ControlMode cm>
+void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controller,
+                                      std::mutex & startM,
+                                      std::condition_variable & startCV,
+                                      bool & start,
+                                      bool & running)
+{
+  {
+    std::unique_lock<std::mutex> lock(startM);
+    startCV.wait(lock, [&]() { return start; });
+  }
+  while(running)
+  {
+    float gripper_pos = {};
+    {
+      std::lock_guard<std::mutex> lock(gripperPosMutex_);
+      gripper_pos = cached_gripper_pos_;
+    }
+
+    driverBridge_->moveGripper(gripper_pos);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 }
 

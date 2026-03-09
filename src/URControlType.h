@@ -39,6 +39,7 @@ struct URControlType<ControlMode::Position>
 {
 private:
   std::vector<double> q = std::vector<double>(6, 0.0);
+  float gripper_pos_ = 1.0; // -1 means uninitialized, force first send
 
 public:
   void control(DriverBridge & driverBridge, const mc_rbdyn::Robot & robot, const rbd::MultiBodyConfig & mbc)

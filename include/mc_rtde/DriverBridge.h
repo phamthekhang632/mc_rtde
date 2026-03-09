@@ -27,6 +27,8 @@ struct DriverBridge
   virtual void servoJ(const std::vector<double> & q) = 0;
   virtual void speedJ(const std::vector<double> & alpha) = 0;
 
+  virtual void moveGripper(float pos) = 0;
+
   virtual Driver driver() const noexcept = 0;
 };
 

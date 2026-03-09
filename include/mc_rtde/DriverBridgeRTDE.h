@@ -4,6 +4,8 @@
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
 
+#include <ur_rtde/robotiq_gripper.h>
+
 namespace mc_rtde
 {
 
@@ -13,13 +15,19 @@ struct DriverBridgeRTDE : public DriverBridge
   {
     ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
+
+    ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, true);
+    ur_rtde_gripper_->connect();
+    ur_rtde_gripper_->activate();
+    // Wait until active
+    while(!ur_rtde_gripper_->isActive())
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    mc_rtc::log::info("[mc_rtde] Gripper activated and ready");
   }
 
-  std::vector<double> getActualQ() override
-  {
-    return ur_rtde_receive_->getActualQ();
-  }
-
+  // ---------- OVERRIDE ur_rtde::RTDEControlInterface ---------------------------------------------
   std::vector<double> getJointTorques() override
   {
     return ur_rtde_control_->getJointTorques();
@@ -39,6 +47,19 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_control_->waitPeriod(start_t);
   }
 
+  // ---------- OVERRIDE ur_rtde::RTDEReceiveInterface ---------------------------------------------
+  std::vector<double> getActualQ() override
+  {
+    return ur_rtde_receive_->getActualQ();
+  }
+
+  // ---------- OVERRIDE r_rtde::RobotiqGripper ----------------------------------------------------
+  void moveGripper(float pos) override
+  {
+    ur_rtde_gripper_->move(pos);
+    // ur_rtde_gripper_->waitForMotionComplete();
+  }
+
   Driver driver() const noexcept override
   {
     return Driver::ur_rtde;
@@ -52,6 +73,7 @@ protected:
   /* Communication information with a real robot */
   ur_rtde::RTDEControlInterface * ur_rtde_control_;
   ur_rtde::RTDEReceiveInterface * ur_rtde_receive_;
+  ur_rtde::RobotiqGripper * ur_rtde_gripper_;
 
   // Parameters
   const double dt = 0.002;
