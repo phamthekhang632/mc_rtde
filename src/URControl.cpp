@@ -100,6 +100,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       std::string ip = rtdeConfig(robot.name())("ip");
       auto driverName = rtdeConfig(robot.name())("driver", std::string{"ur_rtde"});
       auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
+      auto gripper_name = rtdeConfig(robot.name())("gripper", std::string(""));
 
       ur_init_thread.emplace_back(
           [&, ip]()
@@ -109,7 +110,8 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
 
-            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(driver, robot.name(), ip, cycle_s));
+            auto ur = std::unique_ptr<URControlLoop<cm>>(
+                new URControlLoop<cm>(driver, robot.name(), ip, cycle_s, gripper_name));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });
@@ -167,8 +169,12 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     // until the first control command has been computed (by MCGlobalController::run)
     loop_data->ur_threads_->emplace_back(
         [&]() { ur->controlThread(controller, startMutex, startCV, startControl, controller.running); });
-    loop_data->ur_threads_->emplace_back(
-        [&]() { ur->gripperThread(controller, startMutex, startCV, startControl, controller.running); });
+
+    if(!ur->gripperName().empty())
+    {
+      loop_data->ur_threads_->emplace_back(
+          [&]() { ur->gripperThread(controller, startMutex, startCV, startControl, controller.running); });
+    }
   }
   // Create main mc_rtc control thread:
   // - get the latest sensor readings from the robots

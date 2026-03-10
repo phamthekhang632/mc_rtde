@@ -17,7 +17,11 @@ namespace mc_rtde
 template<ControlMode cm>
 struct URControlLoop
 {
-  URControlLoop(Driver driver, const std::string & name, const std::string & ip, double cycle_s);
+  URControlLoop(Driver driver,
+                const std::string & name,
+                const std::string & ip,
+                double cycle_s,
+                const std::string & gripper_name);
 
   void init(mc_control::MCGlobalController & controller);
 
@@ -37,18 +41,24 @@ struct URControlLoop
                      bool & start,
                      bool & running);
 
+  const std::string & gripperName() const noexcept
+  {
+    return gripper_name_;
+  }
+
 private:
   std::string name_;
+  std::string gripper_name_;
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
   rbd::MultiBodyConfig command_;
-  float cached_gripper_pos_ = 0.0f;
   size_t control_id_ = 0;
   size_t prev_control_id_ = 0;
   double delay_ = 0;
   double cycle_s_ = 0;
 
   URSensorInfo state_;
+  float gripper_pos_ = 0.0f;
 
   std::unique_ptr<DriverBridge> driverBridge_{nullptr};
   URControlType<cm> control_;
@@ -67,8 +77,13 @@ template<ControlMode cm>
 using URControlLoopPtr = std::unique_ptr<URControlLoop<cm>>;
 
 template<ControlMode cm>
-URControlLoop<cm>::URControlLoop(Driver driver, const std::string & name, const std::string & ip, double cycle_s)
-: name_(name), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_), cycle_s_(cycle_s)
+URControlLoop<cm>::URControlLoop(Driver driver,
+                                 const std::string & name,
+                                 const std::string & ip,
+                                 double cycle_s,
+                                 const std::string & gripper_name)
+: name_(name), gripper_name_(gripper_name), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_),
+  cycle_s_(cycle_s)
 {
   if(driver == Driver::ur_rtde)
   {
@@ -139,13 +154,12 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   auto & robot = controller.robots().robot(name_);
   command_ = robot.mbc();
 
-  if(controller.robots().hasRobot("robotiq_arg85"))
+  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
   {
-    auto & gripper_robot = controller.robots().robot("robotiq_arg85");
+    auto & gripper_robot = controller.robots().robot(gripper_name_);
     std::lock_guard<std::mutex> glock(gripperPosMutex_);
-    cached_gripper_pos_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
+    gripper_pos_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
   }
-
   control_id_++;
 }
 
@@ -197,7 +211,7 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
     float gripper_pos = {};
     {
       std::lock_guard<std::mutex> lock(gripperPosMutex_);
-      gripper_pos = cached_gripper_pos_;
+      gripper_pos = gripper_pos_;
     }
 
     driverBridge_->moveGripper(gripper_pos);

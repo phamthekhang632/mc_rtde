@@ -19,12 +19,7 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, true);
     ur_rtde_gripper_->connect();
     ur_rtde_gripper_->activate();
-    // Wait until active
-    while(!ur_rtde_gripper_->isActive())
-    {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    mc_rtc::log::info("[mc_rtde] Gripper activated and ready");
+    ur_rtde_gripper_->autoCalibrate();
   }
 
   // ---------- OVERRIDE ur_rtde::RTDEControlInterface ---------------------------------------------
@@ -56,7 +51,13 @@ struct DriverBridgeRTDE : public DriverBridge
   // ---------- OVERRIDE r_rtde::RobotiqGripper ----------------------------------------------------
   void moveGripper(float pos) override
   {
-    ur_rtde_gripper_->move(pos);
+    ur_rtde_gripper_->move(pos / 0.725);
+
+    // ur_rtde_gripper_->waitForMotionComplete();
+
+    // ur_rtde_gripper_->open();
+    // ur_rtde_gripper_->waitForMotionComplete();
+    // ur_rtde_gripper_->close();
     // ur_rtde_gripper_->waitForMotionComplete();
   }
 
