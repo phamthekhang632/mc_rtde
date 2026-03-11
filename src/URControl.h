@@ -52,13 +52,14 @@ private:
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
   rbd::MultiBodyConfig command_;
+  float gripper_command_ = 0.0f;
   size_t control_id_ = 0;
   size_t prev_control_id_ = 0;
   double delay_ = 0;
   double cycle_s_ = 0;
 
   URSensorInfo state_;
-  float gripper_pos_ = 0.0f;
+  float gripper_state_ = 0.0f;
 
   std::unique_ptr<DriverBridge> driverBridge_{nullptr};
   URControlType<cm> control_;
@@ -68,7 +69,8 @@ private:
   // - the method URControlLoop::updateSensors called from the controller_run thread (before MCGlobalController::run)
   mutable std::mutex updateSensorsMutex_;
   mutable std::mutex updateControlMutex_;
-  std::mutex gripperPosMutex_;
+  std::mutex gripperSensorMutex_;
+  std::mutex gripperControlMutex_;
 
   std::vector<double> sensorsBuffer_ = std::vector<double>(6, 0.0);
 };
@@ -144,6 +146,18 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
   updateSensor(&GC::setEncoderValues, state_.qIn_);
   updateSensor(&GC::setEncoderVelocities, state_.dqIn_);
   updateSensor(&GC::setJointTorques, state_.torqIn_);
+
+  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
+  {
+    auto & gripper_robot = controller.robots().robot(gripper_name_);
+    auto jIdx = gripper_robot.jointIndexByName("finger_joint");
+    float real_pos = 0.0f;
+    {
+      std::lock_guard<std::mutex> lock(gripperSensorMutex_);
+      real_pos = gripper_state_;
+    }
+    gripper_robot.mbc().q[jIdx][0] = static_cast<double>(real_pos);
+  }
 }
 
 template<ControlMode cm>
@@ -157,8 +171,8 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
   {
     auto & gripper_robot = controller.robots().robot(gripper_name_);
-    std::lock_guard<std::mutex> glock(gripperPosMutex_);
-    gripper_pos_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
+    std::lock_guard<std::mutex> glock(gripperControlMutex_);
+    gripper_command_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
   }
   control_id_++;
 }
@@ -206,15 +220,44 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
     std::unique_lock<std::mutex> lock(startM);
     startCV.wait(lock, [&]() { return start; });
   }
+
+  float last_sent_pos = -1.0f;
+  float last_target_pos = -1.0f;
+  const float steady_threshold = 0.001f;
+  int stable_count = 0;
+
+  // TODO; change stable_required so that this function can be put in controlThread() ?
+  const int stable_required = 10;
+
   while(running)
   {
-    float gripper_pos = {};
+    float real_pos = driverBridge_->getCurrentPosition();
     {
-      std::lock_guard<std::mutex> lock(gripperPosMutex_);
-      gripper_pos = gripper_pos_;
+      std::lock_guard<std::mutex> lock(gripperSensorMutex_);
+      gripper_state_ = real_pos;
     }
 
-    driverBridge_->moveGripper(gripper_pos);
+    float gripper_command = 0.0f;
+    {
+      std::lock_guard<std::mutex> lock(gripperControlMutex_);
+      gripper_command = gripper_command_;
+    }
+
+    if(std::abs(gripper_command - last_target_pos) > steady_threshold)
+    {
+      stable_count = 0;
+      last_target_pos = gripper_command;
+    }
+    else
+    {
+      stable_count++;
+    }
+
+    if(stable_count >= stable_required && std::abs(gripper_command - last_sent_pos) > steady_threshold)
+    {
+      driverBridge_->moveGripper(gripper_command);
+      last_sent_pos = gripper_command;
+    }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }

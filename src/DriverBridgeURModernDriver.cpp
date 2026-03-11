@@ -82,4 +82,13 @@ void DriverBridgeURModernDriver::stop()
 
   driver_->halt();
 }
+
+// ur_modern_driver does not support Robotiq gripper
+float DriverBridgeURModernDriver::getCurrentPosition()
+{
+  return 0.0f;
+}
+
+void DriverBridgeURModernDriver::moveGripper(float pos) {}
+
 } // namespace mc_rtde

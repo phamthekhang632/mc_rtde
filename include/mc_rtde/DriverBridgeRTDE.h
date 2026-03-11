@@ -18,8 +18,8 @@ struct DriverBridgeRTDE : public DriverBridge
 
     ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, true);
     ur_rtde_gripper_->connect();
-    ur_rtde_gripper_->activate();
-    ur_rtde_gripper_->autoCalibrate();
+    ur_rtde_gripper_->activate(true);
+    ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
   }
 
   // ---------- OVERRIDE ur_rtde::RTDEControlInterface ---------------------------------------------
@@ -42,23 +42,19 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_control_->waitPeriod(start_t);
   }
 
-  // ---------- OVERRIDE ur_rtde::RTDEReceiveInterface ---------------------------------------------
-  std::vector<double> getActualQ() override
+  // ---------- OVERRIDE ur_rtde::RobotiqGripper ---------------------------------------------------
+  float getCurrentPosition() override
   {
-    return ur_rtde_receive_->getActualQ();
+    return ur_rtde_gripper_->getCurrentPosition();
   }
 
-  // ---------- OVERRIDE r_rtde::RobotiqGripper ----------------------------------------------------
   void moveGripper(float pos) override
   {
-    ur_rtde_gripper_->move(pos / 0.725);
-
-    // ur_rtde_gripper_->waitForMotionComplete();
-
-    // ur_rtde_gripper_->open();
-    // ur_rtde_gripper_->waitForMotionComplete();
-    // ur_rtde_gripper_->close();
-    // ur_rtde_gripper_->waitForMotionComplete();
+    pos = std::clamp(pos, 0.0f, 0.725f);
+    float t = -pos / 0.725 + 1.0; // maping [0, 0.725] to [1.0, 0.0]
+    // mc_rtc::log::info("moveGripper called: pos={} t={}", pos, t);
+    // mc_rtc::log::info("isOpen = {} \t isClose = {}", ur_rtde_gripper_->isOpen(), ur_rtde_gripper_->isClosed());
+    ur_rtde_gripper_->move(t);
   }
 
   Driver driver() const noexcept override
