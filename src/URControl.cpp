@@ -19,7 +19,7 @@ namespace mc_rtde
 struct ControlLoopDataBase
 {
 
-  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr) {};
+  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr){};
 
   ControlMode cm_;
   mc_control::MCGlobalController * controller_;
@@ -31,7 +31,7 @@ struct ControlLoopDataBase
 template<ControlMode cm>
 struct ControlLoopData : public ControlLoopDataBase
 {
-  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
+  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
 
   std::vector<URControlLoopPtr<cm>> * urs;
 };
@@ -48,7 +48,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
   double cycle_s = rtdeConfig("RobotTimestep");
   double controller_s = controller.controller().timeStep;
-  
+
   // Check timestep compatifibility between mc_rtc and robot
   size_t cycle_ns = cycle_s * 1e9;
   size_t controller_ns = controller_s * 1e9;
