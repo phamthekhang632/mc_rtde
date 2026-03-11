@@ -40,6 +40,7 @@ struct DriverBridgeURModernDriver : public DriverBridge
 
   float getCurrentPosition() override;
   void moveGripper(float pos) override;
+  void autoCalibrate() override;
 
 protected:
   void start();

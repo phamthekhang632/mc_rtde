@@ -29,6 +29,7 @@ struct DriverBridge
 
   virtual float getCurrentPosition() = 0;
   virtual void moveGripper(float pos) = 0;
+  virtual void autoCalibrate() = 0;
 
   virtual Driver driver() const noexcept = 0;
 };

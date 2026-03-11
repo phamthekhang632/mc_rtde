@@ -90,5 +90,6 @@ float DriverBridgeURModernDriver::getCurrentPosition()
 }
 
 void DriverBridgeURModernDriver::moveGripper(float pos) {}
+void DriverBridgeURModernDriver::autoCalibrate() {}
 
 } // namespace mc_rtde

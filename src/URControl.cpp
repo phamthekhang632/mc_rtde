@@ -155,6 +155,18 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   controller.controller().gui()->addElement(
       {"RTDE"}, mc_rtc::gui::Button("Stop controller", [&controller]() { controller.running = false; }));
 
+  controller.controller().gui()->addElement({"RTDE"}, mc_rtc::gui::Button("Auto calibrate gripper",
+                                                                          [&urs]()
+                                                                          {
+                                                                            for(auto & ur : urs)
+                                                                            {
+                                                                              if(!ur->gripperName().empty())
+                                                                              {
+                                                                                ur->autoCalibrate();
+                                                                              }
+                                                                            }
+                                                                          }));
+
   // Start ur control loop
   static std::mutex startMutex;
   static std::condition_variable startCV;

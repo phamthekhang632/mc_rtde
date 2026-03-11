@@ -17,7 +17,7 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
 
     ur_rtde_gripper_->connect();
-    ur_rtde_gripper_->activate(true);
+    ur_rtde_gripper_->activate();
     ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
   }
 
@@ -57,6 +57,11 @@ struct DriverBridgeRTDE : public DriverBridge
     pos = std::clamp(pos, 0.0f, 0.725f);
     float t = -pos / 0.725 + 1.0; // maping [0, 0.725] to [1.0, 0.0]
     ur_rtde_gripper_->move(t);
+  }
+
+  void autoCalibrate() override
+  {
+    ur_rtde_gripper_->autoCalibrate();
   }
 
   Driver driver() const noexcept override

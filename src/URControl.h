@@ -46,6 +46,11 @@ struct URControlLoop
     return gripper_name_;
   }
 
+  void autoCalibrate()
+  {
+    driverBridge_->autoCalibrate();
+  }
+
 private:
   std::string name_;
   std::string gripper_name_;
