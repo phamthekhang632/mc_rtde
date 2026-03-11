@@ -1,10 +1,9 @@
 #pragma once
 
 #include <mc_rtde/DriverBridge.h>
+#include <ur_rtde/robotiq_gripper.h>
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
-
-#include <ur_rtde/robotiq_gripper.h>
 
 namespace mc_rtde
 {
@@ -13,7 +12,6 @@ struct DriverBridgeRTDE : public DriverBridge
 {
   DriverBridgeRTDE(const std::string & ip) : DriverBridge()
   {
-    
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
     ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
     ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
@@ -23,7 +21,7 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
   }
 
-  // ---------- FOR ur_rtde::RTDE --------------------------------------------------
+  // ---------- FOR ur_rtde::RTDE ----------------------------------------------
   std::vector<double> getActualQ() override
   {
     return ur_rtde_receive_->getActualQ();
@@ -48,7 +46,7 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_control_->waitPeriod(start_t);
   }
 
-  // ---------- OVERRIDE ur_rtde::RobotiqGripper ---------------------------------------------------
+  // ---------- OVERRIDE ur_rtde::RobotiqGripper -------------------------------
   float getCurrentPosition() override
   {
     return ur_rtde_gripper_->getCurrentPosition();
@@ -58,8 +56,6 @@ struct DriverBridgeRTDE : public DriverBridge
   {
     pos = std::clamp(pos, 0.0f, 0.725f);
     float t = -pos / 0.725 + 1.0; // maping [0, 0.725] to [1.0, 0.0]
-    // mc_rtc::log::info("moveGripper called: pos={} t={}", pos, t);
-    // mc_rtc::log::info("isOpen = {} \t isClose = {}", ur_rtde_gripper_->isOpen(), ur_rtde_gripper_->isClosed());
     ur_rtde_gripper_->move(t);
   }
 
