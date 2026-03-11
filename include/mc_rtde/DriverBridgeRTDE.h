@@ -13,16 +13,22 @@ struct DriverBridgeRTDE : public DriverBridge
 {
   DriverBridgeRTDE(const std::string & ip) : DriverBridge()
   {
-    ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
+    
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
+    ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
+    ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
 
-    ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, true);
     ur_rtde_gripper_->connect();
     ur_rtde_gripper_->activate(true);
     ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
   }
 
-  // ---------- OVERRIDE ur_rtde::RTDEControlInterface ---------------------------------------------
+  // ---------- FOR ur_rtde::RTDE --------------------------------------------------
+  std::vector<double> getActualQ() override
+  {
+    return ur_rtde_receive_->getActualQ();
+  }
+
   std::vector<double> getJointTorques() override
   {
     return ur_rtde_control_->getJointTorques();

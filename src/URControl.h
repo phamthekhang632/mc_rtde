@@ -131,8 +131,6 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
 template<ControlMode cm>
 void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controller)
 {
-  std::lock_guard<std::mutex> lock(
-      updateSensorsMutex_); // protects against conurrent write from the URControlLoop::updatecontrol thread
   auto & robot = controller.robots().robot(name_);
   using GC = mc_control::MCGlobalController;
   using set_sensor_t = void (GC::*)(const std::string &, const std::vector<double> &);
@@ -142,10 +140,13 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
     std::memcpy(sensorsBuffer_.data(), data.data(), 6 * sizeof(double));
     (controller.*set_sensor)(robot.name(), sensorsBuffer_);
   };
-
-  updateSensor(&GC::setEncoderValues, state_.qIn_);
-  updateSensor(&GC::setEncoderVelocities, state_.dqIn_);
-  updateSensor(&GC::setJointTorques, state_.torqIn_);
+  {
+    // protects against conurrent write from the URControlLoop::updatecontrol thread
+    std::lock_guard<std::mutex> lock(updateSensorsMutex_);
+    updateSensor(&GC::setEncoderValues, state_.qIn_);
+    updateSensor(&GC::setEncoderVelocities, state_.dqIn_);
+    updateSensor(&GC::setJointTorques, state_.torqIn_);
+  }
 
   if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
   {
@@ -227,7 +228,7 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
   int stable_count = 0;
 
   // TODO; change stable_required so that this function can be put in controlThread() ?
-  const int stable_required = 10;
+  const int stable_required = 5;
 
   while(running)
   {
@@ -259,7 +260,7 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
       last_sent_pos = gripper_command;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 }
 
