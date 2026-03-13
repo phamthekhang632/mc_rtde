@@ -262,7 +262,6 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
     startCV.wait(lock, [&]() { return start; });
   }
 
-  // Initialize last positions from the current command (set during init())
   float last_sent_pos;
   float last_target_pos;
   {
@@ -270,7 +269,7 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
     last_sent_pos = gripper_command_;
     last_target_pos = gripper_command_;
   }
-  
+
   const float steady_threshold = 0.001f;
   int stable_count = 0;
 
