@@ -19,7 +19,7 @@ namespace mc_rtde
 struct ControlLoopDataBase
 {
 
-  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr) {};
+  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr){};
 
   ControlMode cm_;
   mc_control::MCGlobalController * controller_;
@@ -31,7 +31,7 @@ struct ControlLoopDataBase
 template<ControlMode cm>
 struct ControlLoopData : public ControlLoopDataBase
 {
-  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
+  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
 
   std::vector<URControlLoopPtr<cm>> * urs;
 };
