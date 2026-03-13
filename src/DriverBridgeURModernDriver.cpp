@@ -84,12 +84,33 @@ void DriverBridgeURModernDriver::stop()
 }
 
 // ur_modern_driver does not support Robotiq gripper
+bool gripper_warned_ = false;
 float DriverBridgeURModernDriver::getCurrentPosition()
 {
+  if(!gripper_warned_)
+  {
+    std::cout << "[WARNING] ur_modern_driver does not support Robotiq gripper" << std::endl;
+    gripper_warned_ = true;
+  }
   return 0.0f;
 }
 
-void DriverBridgeURModernDriver::moveGripper(float pos) {}
-void DriverBridgeURModernDriver::autoCalibrate() {}
+void DriverBridgeURModernDriver::moveGripper(float pos)
+{
+  if(!gripper_warned_)
+  {
+    std::cout << "[WARNING] ur_modern_driver does not support Robotiq gripper" << std::endl;
+    gripper_warned_ = true;
+  }
+}
+
+void DriverBridgeURModernDriver::autoCalibrate()
+{
+  if(!gripper_warned_)
+  {
+    std::cout << "[WARNING] ur_modern_driver does not support Robotiq gripper" << std::endl;
+    gripper_warned_ = true;
+  }
+}
 
 } // namespace mc_rtde
