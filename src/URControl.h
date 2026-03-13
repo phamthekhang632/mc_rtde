@@ -53,18 +53,20 @@ struct URControlLoop
 
 private:
   std::string name_;
+  rbd::MultiBodyConfig command_;
+  URSensorInfo state_;
+
   std::string gripper_name_;
+  float gripper_command_ = 0.0f;
+  float gripper_state_ = 0.0f;
+  std::string gripper_joint_;
+
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
-  rbd::MultiBodyConfig command_;
-  float gripper_command_ = 0.0f;
   size_t control_id_ = 0;
   size_t prev_control_id_ = 0;
   double delay_ = 0;
   double cycle_s_ = 0;
-
-  URSensorInfo state_;
-  float gripper_state_ = 0.0f;
 
   std::unique_ptr<DriverBridge> driverBridge_{nullptr};
   URControlType<cm> control_;
@@ -126,6 +128,27 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
     robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
   }
 
+  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
+  {
+    gripper_state_ = driverBridge_->getCurrentPosition();
+    auto & gripper_robot = controller.robots().robot(gripper_name_);
+    bool joint_found = false;
+    for(const auto & joint : gripper_robot.mb().joints())
+    {
+      if(joint.dof() == 1 && !joint.isMimic())
+      {
+        if(joint_found)
+          mc_rtc::log::error_and_throw("Gripper {}: too many actuated joint found", gripper_name_);
+        else
+        {
+          gripper_joint_ = joint.name();
+          joint_found = true;
+        }
+      }
+    }
+    if(gripper_joint_.empty()) mc_rtc::log::warning("Gripper {}: no actuated joint found", gripper_name_);
+  }
+
   updateSensors(controller);
   updateControl(controller);
 
@@ -156,12 +179,12 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
   if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
   {
     auto & gripper_robot = controller.robots().robot(gripper_name_);
-    auto jIdx = gripper_robot.jointIndexByName("finger_joint");
     float real_pos = 0.0f;
     {
       std::lock_guard<std::mutex> lock(gripperSensorMutex_);
       real_pos = gripper_state_;
     }
+    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
     gripper_robot.mbc().q[jIdx][0] = static_cast<double>(real_pos);
   }
 }
@@ -178,7 +201,8 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   {
     auto & gripper_robot = controller.robots().robot(gripper_name_);
     std::lock_guard<std::mutex> glock(gripperControlMutex_);
-    gripper_command_ = static_cast<float>(gripper_robot.mbc().q[gripper_robot.jointIndexByName("finger_joint")][0]);
+    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
+    gripper_command_ = static_cast<float>(gripper_robot.mbc().q[jIdx][0]);
   }
   control_id_++;
 }
