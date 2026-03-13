@@ -116,6 +116,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     }
     else
     {
+      // Gripper will trigger this warning
       mc_rtc::log::warning("The loaded controller uses an actuated robot that is not configured and not ignored: {}",
                            robot.name());
     }
@@ -135,8 +136,9 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
   controller.init(robots.robot().encoderValues());
 
-  for(auto & robot : robots)
+  for(auto & ur : urs)
   {
+    auto & robot = controller.robots().robot(ur->robotName());
     mc_rtc::log::info("Robot: {}", robot.name());
     int dof = 0;
     for(const auto & joint : robot.mb().joints())
@@ -144,10 +146,15 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       if(joint.dof() == 1 && !joint.isMimic())
       {
         dof++;
-        // TODO (error): robotiq_arg85 finger_joint is always 0.0
         mc_rtc::log::info("\t{}: {:.5f}", joint.name(), robot.mbc().q[robot.jointIndexByName(joint.name())][0]);
       }
     }
+    if(!ur->gripperName().empty())
+    {
+      dof++;
+      mc_rtc::log::info("\t{}: {:.5f}", ur->gripperName(), ur->gripperState());
+    }
+
     mc_rtc::log::info("DOF of {} is {}\n", robot.name(), dof);
   }
 

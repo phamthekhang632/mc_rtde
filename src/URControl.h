@@ -41,9 +41,18 @@ struct URControlLoop
                      bool & start,
                      bool & running);
 
+  const std::string & robotName() const noexcept
+  {
+    return name_;
+  }
+
   const std::string & gripperName() const noexcept
   {
     return gripper_name_;
+  }
+  const float & gripperState() const noexcept
+  {
+    return gripper_state_;
   }
 
   void autoCalibrate()
