@@ -66,8 +66,8 @@ private:
   URSensorInfo state_;
 
   std::string gripper_name_;
-  float gripper_command_ = 0.0f;
-  float gripper_state_ = 0.0f;
+  float gripper_command_;
+  float gripper_state_;
   std::string gripper_joint_;
 
   mc_rtc::Logger logger_;
@@ -139,7 +139,6 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
 
   if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
   {
-    gripper_state_ = driverBridge_->getCurrentPosition();
     auto & gripper_robot = controller.robots().robot(gripper_name_);
     bool joint_found = false;
     for(const auto & joint : gripper_robot.mb().joints())
@@ -156,6 +155,9 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
       }
     }
     if(gripper_joint_.empty()) mc_rtc::log::warning("Gripper {}: no actuated joint found", gripper_name_);
+    gripper_state_ = driverBridge_->getCurrentPosition();
+    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
+    gripper_robot.mbc().q[jIdx][0] = static_cast<double>(gripper_state_);
   }
 
   updateSensors(controller);
