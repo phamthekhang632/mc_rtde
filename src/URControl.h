@@ -76,8 +76,8 @@ private:
   // - the method URControlLoop::updateSensors called from the controller_run thread (before MCGlobalController::run)
   mutable std::mutex updateSensorsMutex_;
   mutable std::mutex updateControlMutex_;
-  std::mutex gripperSensorMutex_;
-  std::mutex gripperControlMutex_;
+  mutable std::mutex gripperSensorMutex_;
+  mutable std::mutex gripperControlMutex_;
 
   std::vector<double> sensorsBuffer_ = std::vector<double>(6, 0.0);
 };
