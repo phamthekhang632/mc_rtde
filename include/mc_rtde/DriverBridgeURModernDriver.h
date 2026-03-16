@@ -38,10 +38,6 @@ struct DriverBridgeURModernDriver : public DriverBridge
     state().setControllerUpdated();
   }
 
-  float getCurrentPosition() override;
-  void moveGripper(float pos) override;
-  void autoCalibrate() override;
-
 protected:
   void start();
   void stop();

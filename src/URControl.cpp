@@ -98,7 +98,6 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       std::string ip = rtdeConfig(robot.name())("ip");
       auto driverName = rtdeConfig(robot.name())("driver", std::string{"ur_rtde"});
       auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
-      auto gripper_name = rtdeConfig(robot.name())("gripper", std::string(""));
 
       ur_init_thread.emplace_back(
           [&, ip]()
@@ -108,8 +107,29 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
 
-            auto ur = std::unique_ptr<URControlLoop<cm>>(
-                new URControlLoop<cm>(driver, robot.name(), ip, cycle_s, gripper_name));
+            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(driver, robot.name(), ip, cycle_s));
+
+            if(rtdeConfig.has("gripper"))
+            {
+              mc_control::Configuration gripper_config;
+              gripper_config = rtdeConfig(robot.name())("gripper");
+
+              if(!gripper_config.has("name") || !gripper_config.has("type"))
+              {
+                mc_rtc::log::error_and_throw("Gripper configuration must contain 'name' and 'type'");
+              }
+
+              // Gripper is consider as a robot here
+              if(robots.hasRobot(gripper_config("name")))
+              {
+                ur->attachGripper(gripper_config);
+              }
+              else
+              {
+                mc_rtc::log::error("Gripper name doesn't match with robot's gripper name");
+              }
+            }
+
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });
@@ -136,43 +156,19 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
   controller.init(robots.robot().encoderValues());
 
-  for(auto & ur : urs)
-  {
-    auto & robot = controller.robots().robot(ur->robotName());
-    mc_rtc::log::info("Robot: {}", robot.name());
-    int dof = 0;
-    for(const auto & joint : robot.mb().joints())
-    {
-      if(joint.dof() == 1 && !joint.isMimic())
-      {
-        dof++;
-        mc_rtc::log::info("\t{}: {:.5f}", joint.name(), robot.mbc().q[robot.jointIndexByName(joint.name())][0]);
-      }
-    }
-    if(!ur->gripperName().empty())
-    {
-      dof++;
-      mc_rtc::log::info("\t{}: {:.5f}", ur->gripperName(), ur->gripperState());
-    }
-
-    mc_rtc::log::info("DOF of {} is {}\n", robot.name(), dof);
-  }
-
   controller.running = true;
   controller.controller().gui()->addElement(
       {"RTDE"}, mc_rtc::gui::Button("Stop controller", [&controller]() { controller.running = false; }));
 
-  controller.controller().gui()->addElement({"RTDE"}, mc_rtc::gui::Button("Auto calibrate gripper",
-                                                                          [&urs]()
-                                                                          {
-                                                                            for(auto & ur : urs)
-                                                                            {
-                                                                              if(!ur->gripperName().empty())
-                                                                              {
-                                                                                ur->autoCalibrate();
-                                                                              }
-                                                                            }
-                                                                          }));
+  for(const auto & ur : urs)
+  {
+    for(const auto & gripper : ur->grippers())
+    {
+      controller.controller().gui()->addElement(
+          {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate gripper {}", gripper.first),
+                                        [&gripper]() { gripper.second->autoCalibrate(); }));
+    }
+  }
 
   // Start ur control loop
   static std::mutex startMutex;
@@ -186,12 +182,13 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     loop_data->ur_threads_->emplace_back(
         [&]() { ur->controlThread(controller, startMutex, startCV, startControl, controller.running); });
 
-    if(!ur->gripperName().empty())
+    for(auto & gripper : ur->grippers())
     {
       loop_data->ur_threads_->emplace_back(
-          [&]() { ur->gripperThread(controller, startMutex, startCV, startControl, controller.running); });
+          [&]() { ur->gripperThread(gripper.first, startMutex, startCV, startControl, controller.running); });
     }
   }
+
   // Create main mc_rtc control thread:
   // - get the latest sensor readings from the robots
   // - run mc_rtc controller (MCGlobalController::run)
