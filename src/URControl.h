@@ -105,7 +105,7 @@ URControlLoop<cm>::URControlLoop(Driver driver,
 {
   if(driver == Driver::ur_rtde)
   {
-    driverBridge_ = std::make_unique<DriverBridgeRTDE>(ip);
+    driverBridge_ = std::make_unique<DriverBridgeRTDE>(ip, gripper_name);
   }
   else
   {
@@ -273,7 +273,6 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
   const float steady_threshold = 0.001f;
   int stable_count = 0;
 
-  // TODO; change stable_required so that this function can be put in controlThread() ?
   const int stable_required = 5;
 
   while(running)

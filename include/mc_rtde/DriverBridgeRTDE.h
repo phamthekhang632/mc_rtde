@@ -10,18 +10,20 @@ namespace mc_rtde
 
 struct DriverBridgeRTDE : public DriverBridge
 {
-  DriverBridgeRTDE(const std::string & ip) : DriverBridge()
+  DriverBridgeRTDE(const std::string & ip, const std::string & gripper_name) : DriverBridge()
   {
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
     ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
-    ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
-
-    ur_rtde_gripper_->connect();
-    ur_rtde_gripper_->activate();
-    ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
+    if(!gripper_name.empty())
+    {
+      ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
+      ur_rtde_gripper_->connect();
+      ur_rtde_gripper_->activate(false);
+      ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
+    }
   }
 
-  // ---------- FOR ur_rtde::RTDE ----------------------------------------------
+  // ---------- ur_rtde::RTDE --------------------------------------------------
   std::vector<double> getActualQ() override
   {
     return ur_rtde_receive_->getActualQ();
@@ -46,7 +48,7 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_control_->waitPeriod(start_t);
   }
 
-  // ---------- OVERRIDE ur_rtde::RobotiqGripper -------------------------------
+  // ---------- ur_rtde::RobotiqGripper ----------------------------------------
   float getCurrentPosition() override
   {
     return ur_rtde_gripper_->getCurrentPosition();
