@@ -19,9 +19,14 @@ void GripperRobotiq::setPosition(const std::vector<double> & position)
   ur_rtde_gripper_->move(target);
 }
 
-void GripperRobotiq::setForce(const std::vector<double> & forces)
+void GripperRobotiq::setForce(const std::vector<double> & force)
 {
-  // TODO
+  ur_rtde_gripper_->setForce(force[0]);
+}
+
+void GripperRobotiq::setSpeed(const std::vector<double> & speed)
+{
+  ur_rtde_gripper_->setSpeed(speed[0]);
 }
 
 std::vector<double> GripperRobotiq::getPosition()
@@ -31,18 +36,23 @@ std::vector<double> GripperRobotiq::getPosition()
 
 std::vector<double> GripperRobotiq::getForce()
 {
-  // TODO not supported yet
-  return {};
+  return {(double)ur_rtde_gripper_->getVar("FOR") / 255.0};
 }
 
-int GripperRobotiq::getStatus()
+std::vector<double> GripperRobotiq::getSpeed()
 {
-  // TODO not supported yet
-  return 0;
+  return {(double)ur_rtde_gripper_->getVar("SPE") / 255.0};
+}
+
+void GripperRobotiq::getStatus()
+{
+  std::vector<std::string> vars = {"ACT", "GTO", "FOR", "SPE", "POS", "STA", "PRE", "OBJ", "FLT"};
+  ur_rtde_gripper_->getVars(vars);
 }
 
 void GripperRobotiq::autoCalibrate()
 {
   ur_rtde_gripper_->autoCalibrate();
 }
+
 } // namespace mc_rtde

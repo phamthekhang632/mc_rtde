@@ -13,10 +13,13 @@ struct GripperRobotiq : public GripperInterface
 
   void setPosition(const std::vector<double> & position) override;
   void setForce(const std::vector<double> & force) override;
+  void setSpeed(const std::vector<double> & speed) override;
+
   std::vector<double> getPosition() override;
   std::vector<double> getForce() override;
-  int getStatus() override;
+  std::vector<double> getSpeed() override;
 
+  void getStatus() override;
   void autoCalibrate() override;
 
 private:
