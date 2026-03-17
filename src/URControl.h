@@ -262,12 +262,12 @@ void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
     startCV.wait(lock, [&]() { return start; });
   }
 
-  float last_sent_pos;
-  float last_target_pos;
+  std::vector<double> last_sent_pos;
+  std::vector<double> last_target_pos;
   {
     std::lock_guard<std::mutex> lock(gripperControlMutex_);
-    last_sent_pos = gripper_command_[0]; // FIXME don't use [0]
-    last_target_pos = gripper_command_[0]; // FIXME don't use [0]
+    last_sent_pos = gripper_command_;
+    last_target_pos = gripper_command_;
   }
 
   const float steady_threshold = 0.001f;
@@ -281,13 +281,22 @@ void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
       gripper_state_ = grippersInterfaces_[grippe_name]->getPosition();
     }
 
-    double gripper_command = 0.0f;
+    std::vector<double> gripper_command = {};
     {
       std::lock_guard<std::mutex> lock(gripperControlMutex_);
-      gripper_command = gripper_command_[0]; // FIXME don't use [0]
+      gripper_command = gripper_command_;
     }
 
-    if(std::abs(gripper_command - last_target_pos) > steady_threshold)
+    auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
+    {
+      for(size_t i = 0; i < a.size(); i++)
+      {
+        if(std::abs(a[i] - b[i]) > threshold) return true;
+      }
+      return false;
+    };
+
+    if(vectorDiff(gripper_command, last_target_pos, steady_threshold))
     {
       stable_count = 0;
       last_target_pos = gripper_command;
@@ -297,9 +306,9 @@ void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
       stable_count++;
     }
 
-    if(stable_count >= stable_required && std::abs(gripper_command - last_sent_pos) > steady_threshold)
+    if(stable_count >= stable_required && vectorDiff(gripper_command, last_sent_pos, steady_threshold))
     {
-      grippersInterfaces_[grippe_name]->setPosition({gripper_command}); // FIXME don't use {}
+      grippersInterfaces_[grippe_name]->setPosition(gripper_command);
       last_sent_pos = gripper_command;
     }
 
