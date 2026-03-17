@@ -185,8 +185,10 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
     for(auto & gripper : ur->grippers())
     {
+      std::string gripper_name = gripper.first;
       loop_data->ur_threads_->emplace_back(
-          [&]() { ur->gripperThread(gripper.first, startMutex, startCV, startControl, controller.running); });
+          [&, gripper_name]()
+          { ur->gripperThread(gripper_name, startMutex, startCV, startControl, controller.running); });
     }
   }
 
