@@ -95,8 +95,9 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
     if(rtdeConfig.has(robot.name()))
     {
-      std::string ip = rtdeConfig(robot.name())("ip");
-      auto driverName = rtdeConfig(robot.name())("driver", std::string{"ur_rtde"});
+      auto robotConfig = rtdeConfig(robot.name());
+      std::string ip = robotConfig("ip");
+      auto driverName = robotConfig("driver", std::string{"ur_rtde"});
       auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
 
       ur_init_thread.emplace_back(
@@ -109,10 +110,10 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
             auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(driver, robot.name(), ip, cycle_s));
 
-            if(rtdeConfig.has("gripper"))
+            if(robotConfig.has("gripper"))
             {
               mc_control::Configuration gripper_config;
-              gripper_config = rtdeConfig(robot.name())("gripper");
+              gripper_config = robotConfig("gripper");
 
               if(!gripper_config.has("name") || !gripper_config.has("type"))
               {
