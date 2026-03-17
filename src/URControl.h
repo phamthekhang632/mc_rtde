@@ -58,7 +58,6 @@ private:
 
   std::vector<double> gripper_command_;
   std::vector<double> gripper_state_;
-  std::string gripper_joint_;
 
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
@@ -197,8 +196,12 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   {
     auto & gripper_robot = controller.robots().robot(gripper.first);
     std::lock_guard<std::mutex> glock(gripperControlMutex_);
-    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
-    gripper_command_ = gripper_robot.mbc().q[jIdx];
+    gripper_command_.clear();
+    for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
+    {
+      auto jIndex = gripper_robot.jointIndexInMBC(i);
+      gripper_command_.push_back(gripper_robot.mbc().q[jIndex][0]);
+    }
   }
 
   control_id_++;
