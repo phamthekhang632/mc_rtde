@@ -1,15 +1,16 @@
 #pragma once
-
 #include <condition_variable>
 
-#include <iostream>
 #include <mc_control/mc_global_controller.h>
 
 #include "ControlMode.h"
 #include "URControlType.h"
+#include "mc_rtde/grippers/GripperInterface.h"
 
+#include <mc_rtc/logging.h>
 #include <mc_rtde/DriverBridgeRTDE.h>
 #include <mc_rtde/DriverBridgeURModernDriver.h>
+#include <mc_rtde/grippers/GripperRobotiq.h>
 
 namespace mc_rtde
 {
@@ -17,13 +18,11 @@ namespace mc_rtde
 template<ControlMode cm>
 struct URControlLoop
 {
-  URControlLoop(Driver driver,
-                const std::string & name,
-                const std::string & ip,
-                double cycle_s,
-                const std::string & gripper_name);
+  URControlLoop(Driver driver, const std::string & name, const std::string & ip, double cycle_s);
 
   void init(mc_control::MCGlobalController & controller);
+
+  void attachGripper(const mc_control::Configuration & config);
 
   void updateSensors(mc_control::MCGlobalController & controller);
 
@@ -35,40 +34,30 @@ struct URControlLoop
                      bool & start,
                      bool & running);
 
-  void gripperThread(mc_control::MCGlobalController & controller,
+  void gripperThread(const std::string & gripper_name,
                      std::mutex & startM,
                      std::condition_variable & startCV,
                      bool & start,
                      bool & running);
 
-  const std::string & robotName() const noexcept
+  std::unordered_map<std::string, std::shared_ptr<GripperInterface>> grippers()
   {
-    return name_;
+    return grippersInterfaces_;
   }
 
-  const std::string & gripperName() const noexcept
+  void autoCalibrateGrippers()
   {
-    return gripper_name_;
-  }
-  const float & gripperState() const noexcept
-  {
-    return gripper_state_;
-  }
-
-  void autoCalibrate()
-  {
-    driverBridge_->autoCalibrate();
+    for(auto & gripper : grippersInterfaces_) gripper.second->autoCalibrate();
   }
 
 private:
   std::string name_;
+  std::string ip_;
   rbd::MultiBodyConfig command_;
   URSensorInfo state_;
 
-  std::string gripper_name_;
-  float gripper_command_;
-  float gripper_state_;
-  std::string gripper_joint_;
+  std::vector<double> gripper_command_;
+  std::vector<double> gripper_state_;
 
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
@@ -78,6 +67,7 @@ private:
   double cycle_s_ = 0;
 
   std::unique_ptr<DriverBridge> driverBridge_{nullptr};
+  std::unordered_map<std::string, std::shared_ptr<GripperInterface>> grippersInterfaces_;
   URControlType<cm> control_;
 
   // To protect against concurrent read/write between:
@@ -95,13 +85,8 @@ template<ControlMode cm>
 using URControlLoopPtr = std::unique_ptr<URControlLoop<cm>>;
 
 template<ControlMode cm>
-URControlLoop<cm>::URControlLoop(Driver driver,
-                                 const std::string & name,
-                                 const std::string & ip,
-                                 double cycle_s,
-                                 const std::string & gripper_name)
-: name_(name), gripper_name_(gripper_name), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_),
-  cycle_s_(cycle_s)
+URControlLoop<cm>::URControlLoop(Driver driver, const std::string & name, const std::string & ip, double cycle_s)
+: name_(name), ip_(ip), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_), cycle_s_(cycle_s)
 {
   if(driver == Driver::ur_rtde)
   {
@@ -110,6 +95,28 @@ URControlLoop<cm>::URControlLoop(Driver driver,
   else
   {
     driverBridge_ = std::make_unique<DriverBridgeURModernDriver>(ip, cycle_s_);
+  }
+}
+
+template<ControlMode cm>
+void URControlLoop<cm>::attachGripper(const mc_control::Configuration & gripper_config)
+{
+  if(gripper_config("type") == "robotiq")
+  {
+    int port = gripper_config("port", 63352);
+    std::string name = gripper_config("name");
+    if(!grippersInterfaces_.count(name))
+    {
+      auto gripper = std::make_shared<mc_rtde::GripperRobotiq>(ip_, port);
+      gripper->connect(); // connect before storing
+      grippersInterfaces_.try_emplace(name, std::move(gripper));
+    }
+    else
+      mc_rtc::log::error_and_throw("Gripper {} is already attached to the robot", name);
+  }
+  else
+  {
+    mc_rtc::log::warning("Gripper type : {} is not supported", gripper_config("type"));
   }
 }
 
@@ -137,27 +144,16 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
     robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
   }
 
-  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
+  for(auto & gripper : grippersInterfaces_)
   {
-    auto & gripper_robot = controller.robots().robot(gripper_name_);
-    bool joint_found = false;
-    for(const auto & joint : gripper_robot.mb().joints())
+    auto & gripper_robot = controller.robots().robot(gripper.first);
+    gripper_state_ = gripper.second->getPosition();
+
+    for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
     {
-      if(joint.dof() == 1 && !joint.isMimic())
-      {
-        if(joint_found)
-          mc_rtc::log::error_and_throw("Gripper {}: too many actuated joint found", gripper_name_);
-        else
-        {
-          gripper_joint_ = joint.name();
-          joint_found = true;
-        }
-      }
+      auto jIndex = gripper_robot.jointIndexInMBC(i);
+      gripper_robot.mbc().q[jIndex][0] = gripper_state_[i];
     }
-    if(gripper_joint_.empty()) mc_rtc::log::warning("Gripper {}: no actuated joint found", gripper_name_);
-    gripper_state_ = driverBridge_->getCurrentPosition();
-    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
-    gripper_robot.mbc().q[jIdx][0] = static_cast<double>(gripper_state_);
   }
 
   updateSensors(controller);
@@ -187,16 +183,15 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
     updateSensor(&GC::setJointTorques, state_.torqIn_);
   }
 
-  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
+  for(auto & gripper : grippersInterfaces_)
   {
-    auto & gripper_robot = controller.robots().robot(gripper_name_);
-    float real_pos = 0.0f;
+    auto & gripper_robot = controller.robots().robot(gripper.first);
+    std::lock_guard<std::mutex> lock(gripperSensorMutex_);
+    for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
     {
-      std::lock_guard<std::mutex> lock(gripperSensorMutex_);
-      real_pos = gripper_state_;
+      auto jIndex = gripper_robot.jointIndexInMBC(i);
+      gripper_robot.mbc().q[jIndex][0] = gripper_state_[i];
     }
-    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
-    gripper_robot.mbc().q[jIdx][0] = static_cast<double>(real_pos);
   }
 }
 
@@ -208,13 +203,18 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   auto & robot = controller.robots().robot(name_);
   command_ = robot.mbc();
 
-  if(!gripper_name_.empty() && controller.robots().hasRobot(gripper_name_))
+  for(auto & gripper : grippersInterfaces_)
   {
-    auto & gripper_robot = controller.robots().robot(gripper_name_);
+    auto & gripper_robot = controller.robots().robot(gripper.first);
     std::lock_guard<std::mutex> glock(gripperControlMutex_);
-    auto jIdx = gripper_robot.jointIndexByName(gripper_joint_);
-    gripper_command_ = static_cast<float>(gripper_robot.mbc().q[jIdx][0]);
+    gripper_command_.clear();
+    for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
+    {
+      auto jIndex = gripper_robot.jointIndexInMBC(i);
+      gripper_command_.push_back(gripper_robot.mbc().q[jIndex][0]);
+    }
   }
+
   control_id_++;
 }
 
@@ -251,7 +251,7 @@ void URControlLoop<cm>::controlThread(mc_control::MCGlobalController & controlle
 }
 
 template<ControlMode cm>
-void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controller,
+void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
                                       std::mutex & startM,
                                       std::condition_variable & startCV,
                                       bool & start,
@@ -262,8 +262,8 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
     startCV.wait(lock, [&]() { return start; });
   }
 
-  float last_sent_pos;
-  float last_target_pos;
+  std::vector<double> last_sent_pos;
+  std::vector<double> last_target_pos;
   {
     std::lock_guard<std::mutex> lock(gripperControlMutex_);
     last_sent_pos = gripper_command_;
@@ -272,24 +272,31 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
 
   const float steady_threshold = 0.001f;
   int stable_count = 0;
-
   const int stable_required = 5;
 
   while(running)
   {
-    float real_pos = driverBridge_->getCurrentPosition();
     {
       std::lock_guard<std::mutex> lock(gripperSensorMutex_);
-      gripper_state_ = real_pos;
+      gripper_state_ = grippersInterfaces_[grippe_name]->getPosition();
     }
 
-    float gripper_command = 0.0f;
+    std::vector<double> gripper_command = {};
     {
       std::lock_guard<std::mutex> lock(gripperControlMutex_);
       gripper_command = gripper_command_;
     }
 
-    if(std::abs(gripper_command - last_target_pos) > steady_threshold)
+    auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
+    {
+      for(size_t i = 0; i < a.size(); i++)
+      {
+        if(std::abs(a[i] - b[i]) > threshold) return true;
+      }
+      return false;
+    };
+
+    if(vectorDiff(gripper_command, last_target_pos, steady_threshold))
     {
       stable_count = 0;
       last_target_pos = gripper_command;
@@ -299,9 +306,9 @@ void URControlLoop<cm>::gripperThread(mc_control::MCGlobalController & controlle
       stable_count++;
     }
 
-    if(stable_count >= stable_required && std::abs(gripper_command - last_sent_pos) > steady_threshold)
+    if(stable_count >= stable_required && vectorDiff(gripper_command, last_sent_pos, steady_threshold))
     {
-      driverBridge_->moveGripper(gripper_command);
+      grippersInterfaces_[grippe_name]->setPosition(gripper_command);
       last_sent_pos = gripper_command;
     }
 

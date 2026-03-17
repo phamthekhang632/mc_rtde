@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mc_rtde/DriverBridge.h>
-#include <ur_rtde/robotiq_gripper.h>
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
 
@@ -14,21 +13,15 @@ struct DriverBridgeRTDE : public DriverBridge
   {
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
     ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);
-    if(!gripper_name.empty())
-    {
-      ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip, 63352, false);
-      ur_rtde_gripper_->connect();
-      ur_rtde_gripper_->activate(false);
-      ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
-    }
   }
 
-  // ---------- ur_rtde::RTDE --------------------------------------------------
+  // ---------- ur_rtde_receive_ -----------------------------------------------
   std::vector<double> getActualQ() override
   {
     return ur_rtde_receive_->getActualQ();
   }
 
+  // ---------- ur_rtde_control_ -----------------------------------------------
   std::vector<double> getJointTorques() override
   {
     return ur_rtde_control_->getJointTorques();
@@ -48,24 +41,6 @@ struct DriverBridgeRTDE : public DriverBridge
     ur_rtde_control_->waitPeriod(start_t);
   }
 
-  // ---------- ur_rtde::RobotiqGripper ----------------------------------------
-  float getCurrentPosition() override
-  {
-    return ur_rtde_gripper_->getCurrentPosition();
-  }
-
-  void moveGripper(float pos) override
-  {
-    pos = std::clamp(pos, 0.0f, 0.725f);
-    float t = -pos / 0.725 + 1.0; // maping [0, 0.725] to [1.0, 0.0]
-    ur_rtde_gripper_->move(t);
-  }
-
-  void autoCalibrate() override
-  {
-    ur_rtde_gripper_->autoCalibrate();
-  }
-
   Driver driver() const noexcept override
   {
     return Driver::ur_rtde;
@@ -79,7 +54,6 @@ protected:
   /* Communication information with a real robot */
   ur_rtde::RTDEControlInterface * ur_rtde_control_;
   ur_rtde::RTDEReceiveInterface * ur_rtde_receive_;
-  ur_rtde::RobotiqGripper * ur_rtde_gripper_;
 
   // Parameters
   const double dt = 0.002;
