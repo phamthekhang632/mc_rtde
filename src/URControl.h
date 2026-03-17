@@ -182,6 +182,17 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
     updateSensor(&GC::setEncoderVelocities, state_.dqIn_);
     updateSensor(&GC::setJointTorques, state_.torqIn_);
   }
+
+  for(auto & gripper : grippersInterfaces_)
+  {
+    auto & gripper_robot = controller.robots().robot(gripper.first);
+    std::lock_guard<std::mutex> lock(gripperSensorMutex_);
+    for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
+    {
+      auto jIndex = gripper_robot.jointIndexInMBC(i);
+      gripper_robot.mbc().q[jIndex][0] = gripper_state_[i];
+    }
+  }
 }
 
 template<ControlMode cm>
@@ -261,8 +272,6 @@ void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
 
   const float steady_threshold = 0.001f;
   int stable_count = 0;
-
-  // TODO; change stable_required so that this function can be put in controlThread() ?
   const int stable_required = 5;
 
   while(running)
