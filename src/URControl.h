@@ -105,14 +105,15 @@ void URControlLoop<cm>::attachGripper(const mc_control::Configuration & gripper_
   if(gripper_config("type") == "robotiq")
   {
     int port = gripper_config("port", 63352);
-    if(!grippersInterfaces_.count(gripper_config("name")))
+    std::string name = gripper_config("name");
+    if(!grippersInterfaces_.count(name))
     {
-      std::string name = gripper_config("name");
       auto gripper = std::make_shared<mc_rtde::GripperRobotiq>(ip_, port);
+      gripper->connect(); // connect before storing
       grippersInterfaces_.try_emplace(name, std::move(gripper));
     }
     else
-      mc_rtc::log::error_and_throw("Gripper {} is already attached to the robot", gripper_config("name"));
+      mc_rtc::log::error_and_throw("Gripper {} is already attached to the robot", name);
   }
   else
   {
