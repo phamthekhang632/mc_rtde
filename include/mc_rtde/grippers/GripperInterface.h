@@ -16,7 +16,7 @@ struct GripperInterface
   virtual std::vector<double> getPosition() = 0;
   virtual std::vector<double> getForce() = 0;
   virtual std::vector<double> getSpeed() = 0;
-  virtual void getStatus() = 0;
+  virtual std::vector<double> getStatus(const std::vector<std::string> & vars) = 0;
 
   virtual void autoCalibrate() = 0;
 };

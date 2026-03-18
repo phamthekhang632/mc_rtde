@@ -44,10 +44,24 @@ std::vector<double> GripperRobotiq::getSpeed()
   return {(double)ur_rtde_gripper_->getVar("SPE") / 255.0};
 }
 
-void GripperRobotiq::getStatus()
+std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & vars)
 {
-  std::vector<std::string> vars = {"ACT", "GTO", "FOR", "SPE", "POS", "STA", "PRE", "OBJ", "FLT"};
-  ur_rtde_gripper_->getVars(vars);
+  std::vector<double> values;
+  values.reserve(vars.size());
+
+  const double factor = 255.0;
+  for(const auto & var : vars)
+  {
+    double value = static_cast<double>(ur_rtde_gripper_->getVar(var));
+    if(var == "POS")
+    {
+      int min_position, max_position;
+      ur_rtde_gripper_->getNativePositionRange(min_position, max_position);
+      value = max_position - value;
+    }
+    values.push_back(value / factor);
+  }
+  return values;
 }
 
 void GripperRobotiq::autoCalibrate()
