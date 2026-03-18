@@ -9,7 +9,7 @@ namespace mc_rtde
 
 struct DriverBridgeRTDE : public DriverBridge
 {
-  DriverBridgeRTDE(const std::string & ip, const std::string & gripper_name) : DriverBridge()
+  DriverBridgeRTDE(const std::string & ip) : DriverBridge()
   {
     ur_rtde_receive_ = new ur_rtde::RTDEReceiveInterface(ip, 500, {}, false, false, 90);
     ur_rtde_control_ = new ur_rtde::RTDEControlInterface(ip, 500, flags, 50002, 85);

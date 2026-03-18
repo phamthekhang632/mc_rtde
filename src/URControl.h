@@ -90,7 +90,7 @@ URControlLoop<cm>::URControlLoop(Driver driver, const std::string & name, const 
 {
   if(driver == Driver::ur_rtde)
   {
-    driverBridge_ = std::make_unique<DriverBridgeRTDE>(ip, gripper_name);
+    driverBridge_ = std::make_unique<DriverBridgeRTDE>(ip);
   }
   else
   {
