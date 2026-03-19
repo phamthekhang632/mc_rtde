@@ -44,22 +44,64 @@ std::vector<double> GripperRobotiq::getSpeed()
   return {(double)ur_rtde_gripper_->getVar("SPE") / 255.0};
 }
 
+/**
+ * @brief Gets the current status of the Robotiq gripper.
+ *
+ * For more defails, check [ur_rtde APT](https://sdurobotics.gitlab.io/ur_rtde/api/api.html#robotiq-gripper-api)
+ *
+ * @param vars Accepted variable names:
+ *
+ * - `"ACT"` : activate (1 while activated, can be reset to clear fault status)
+ *
+ * - `"GTO"` : go to (will perform go to with the actions set in pos, for, spe)
+ *
+ * - `"ATR"` : auto-release (emergency slow move)
+ *
+ * - `"ARD"` : auto-release direction (open(1) or close(0) during auto-release)
+ *
+ * - `"FOR"` : force (0.0-1.0)
+ *
+ * - `"SPE"` : speed (0.0-1.0)
+ *
+ * - `"POS"` : position (0.0-1.0), 1.0 = open
+ *
+ * Read only:
+ *
+ * - `"STA"` : status (0 = is reset, 1 = activating, 3 = active)
+ *
+ * - `"PRE"` : position request (echo of last commanded position)
+ *
+ * - `"OBJ"` : object detection (0 = moving, 1 = outer grip, 2 = inner grip, 3 = no object at rest)
+ *
+ * - `"FLT"` : fault (0=ok, see manual for errors if not zero)
+ *
+ * @return Values in the same order as @p vars.
+ * `"FOR"`, `"SPE"`, and `"POS"` is in
+ * [UNIT_NORMALIZED](https://sdurobotics.gitlab.io/ur_rtde/api/api.html#_CPPv4N7ur_rtde14RobotiqGripper5eUnit15UNIT_NORMALIZEDE)
+ */
 std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & vars)
 {
   std::vector<double> values;
   values.reserve(vars.size());
 
-  const double factor = 255.0;
   for(const auto & var : vars)
   {
-    double value = static_cast<double>(ur_rtde_gripper_->getVar(var));
-    if(var == "POS")
+    if(var == "FOR")
     {
-      int min_position, max_position;
-      ur_rtde_gripper_->getNativePositionRange(min_position, max_position);
-      value = max_position - value;
+      values.push_back(getForce()[0]);
     }
-    values.push_back(value / factor);
+    else if(var == "SPE")
+    {
+      values.push_back(getSpeed()[0]);
+    }
+    else if(var == "POS")
+    {
+      values.push_back(getPosition()[0]);
+    }
+    else
+    {
+      values.push_back(static_cast<double>(ur_rtde_gripper_->getVar(var)));
+    }
   }
   return values;
 }
