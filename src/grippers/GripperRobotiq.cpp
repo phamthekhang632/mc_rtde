@@ -10,6 +10,8 @@ void GripperRobotiq::connect()
   ur_rtde_gripper_->connect();
   ur_rtde_gripper_->activate();
   ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
+
+  state_ = getPosition();
 }
 
 void GripperRobotiq::setPosition(const std::vector<double> & position)
@@ -109,6 +111,27 @@ std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & v
 void GripperRobotiq::autoCalibrate()
 {
   ur_rtde_gripper_->autoCalibrate();
+}
+
+// TODO: add mutex
+void GripperRobotiq::setState(std::vector<double> state)
+{
+  state_ = state;
+};
+
+void GripperRobotiq::setCommand(std::vector<double> command)
+{
+  command_ = command;
+};
+
+std::vector<double> GripperRobotiq::getState()
+{
+  return state_;
+}
+
+std::vector<double> GripperRobotiq::getCommand()
+{
+  return command_;
 }
 
 } // namespace mc_rtde

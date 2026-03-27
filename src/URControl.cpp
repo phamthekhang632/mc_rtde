@@ -19,7 +19,7 @@ namespace mc_rtde
 struct ControlLoopDataBase
 {
 
-  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr){};
+  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr) {};
 
   ControlMode cm_;
   mc_control::MCGlobalController * controller_;
@@ -31,7 +31,7 @@ struct ControlLoopDataBase
 template<ControlMode cm>
 struct ControlLoopData : public ControlLoopDataBase
 {
-  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
+  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
 
   std::vector<URControlLoopPtr<cm>> * urs;
 };
@@ -45,6 +45,9 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   loop_data->controller_ = new mc_control::MCGlobalController(qconfig);
   loop_data->ur_threads_ = new std::vector<std::thread>();
   auto & controller = *loop_data->controller_;
+
+  size_t robot_count = controller.robots().size();
+  mc_rtc::log::info("ROBOT_COUNT: {}", robot_count);
 
   double cycle_s = rtdeConfig("RobotTimestep");
   double controller_s = controller.controller().timeStep;
@@ -99,45 +102,17 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       ur_init_thread.emplace_back(
           [&, robotConfig]()
           {
-            auto driverName = robotConfig("driver", std::string{"ur_rtde"});
-            auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
-
             {
               std::unique_lock<std::mutex> lock(ur_init_mutex);
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
-
-            auto ur = std::unique_ptr<URControlLoop<cm>>(
-                new URControlLoop<cm>(driver, robot.name(), robotConfig("ip"), cycle_s));
-
-            if(robotConfig.has("gripper"))
-            {
-              mc_control::Configuration gripper_config;
-              gripper_config = robotConfig("gripper");
-
-              if(!gripper_config.has("name") || !gripper_config.has("type"))
-              {
-                mc_rtc::log::error_and_throw("Gripper configuration must contain 'name' and 'type'");
-              }
-
-              // Gripper is consider as a robot here
-              if(robots.hasRobot(gripper_config("name")))
-              {
-                ur->attachGripper(gripper_config);
-              }
-              else
-              {
-                mc_rtc::log::error("Gripper name doesn't match with robot's gripper name");
-              }
-            }
-
+            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });
     }
     else
     {
-      // Gripper will trigger this warning
       mc_rtc::log::warning("The loaded controller uses an actuated robot that is not configured and not ignored: {}",
                            robot.name());
     }
@@ -202,7 +177,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   // This frequency must be a multiple (n_steps) of cycle_ns as lower frequencies
   // are simply achieved by calling MCGlobalController every n_steps iterations of the low-level control loop
   loop_data->controller_run_ = new std::thread(
-      [loop_data, n_steps, &interrupt]()
+      [loop_data, n_steps, &interrupt, &robot_count]()
       {
         auto controller_ptr = loop_data->controller_;
         auto & controller = *controller_ptr;
@@ -235,6 +210,15 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
           // Update from the latest available ur sensors (non blocking)
           for(auto & ur : urs_)
           {
+            // TODO: need a better detection allowing robot types to change back and forth
+            if(controller.robots().size() > robot_count)
+            {
+              // TODO: should this be robot_count ++
+              // TODO: looping looping through all robots that is loaded during reset
+              robot_count = controller.robots().size();
+              std::string active_robot = "ur5e_gripper";
+              ur->setActiveRobot(controller, active_robot);
+            }
             ur->updateSensors(controller);
           }
 
