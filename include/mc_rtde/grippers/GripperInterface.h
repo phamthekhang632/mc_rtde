@@ -8,6 +8,7 @@ struct GripperInterface
 {
   virtual ~GripperInterface() = default;
   virtual void connect() = 0;
+  virtual void control() = 0;
 
   virtual void setPosition(const std::vector<double> & position) = 0;
   virtual void setForce(const std::vector<double> & force) = 0;
@@ -20,6 +21,7 @@ struct GripperInterface
 
   virtual void setState(std::vector<double> state) = 0;
   virtual void setCommand(std::vector<double> command) = 0;
+  virtual int getDOF() = 0;
   virtual std::vector<double> getState() = 0;
   virtual std::vector<double> getCommand() = 0;
 

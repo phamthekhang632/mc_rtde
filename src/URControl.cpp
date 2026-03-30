@@ -106,7 +106,8 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               std::unique_lock<std::mutex> lock(ur_init_mutex);
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
-            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
+            auto ur = std::unique_ptr<URControlLoop<cm>>(
+                new URControlLoop<cm>(robot.name(), robotConfig, cycle_s, *loop_data->ur_threads_));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });
@@ -157,14 +158,6 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     // until the first control command has been computed (by MCGlobalController::run)
     loop_data->ur_threads_->emplace_back(
         [&]() { ur->controlThread(controller, startMutex, startCV, startControl, controller.running); });
-
-    for(auto & gripper : ur->grippers())
-    {
-      std::string gripper_name = gripper.first;
-      loop_data->ur_threads_->emplace_back(
-          [&, gripper_name]()
-          { ur->gripperThread(gripper_name, startMutex, startCV, startControl, controller.running); });
-    }
   }
 
   // Create main mc_rtc control thread:
@@ -213,11 +206,10 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
             // TODO: need a better detection allowing robot types to change back and forth
             if(controller.robots().size() > robot_count)
             {
-              // TODO: should this be robot_count ++
-              // TODO: looping looping through all robots that is loaded during reset
+              // TODO: receive signal when that users want to use a different robot variation
               robot_count = controller.robots().size();
               std::string active_robot = "ur5e_gripper";
-              ur->setActiveRobot(controller, active_robot);
+              ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
             }
             ur->updateSensors(controller);
           }

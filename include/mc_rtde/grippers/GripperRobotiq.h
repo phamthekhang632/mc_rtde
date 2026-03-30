@@ -11,6 +11,11 @@ struct GripperRobotiq : public GripperInterface
   GripperRobotiq(const std::string & ip, int port = 63352) : ip_(ip), port_(port) {};
   void connect() override;
 
+  /**
+   * Applying `command_` to tool
+   */
+  void control() override;
+
   void setPosition(const std::vector<double> & position) override;
   void setForce(const std::vector<double> & force) override;
   void setSpeed(const std::vector<double> & speed) override;
@@ -22,6 +27,7 @@ struct GripperRobotiq : public GripperInterface
 
   void setState(std::vector<double> state);
   void setCommand(std::vector<double> state);
+  int getDOF();
   std::vector<double> getState();
   std::vector<double> getCommand();
 
@@ -31,6 +37,7 @@ private:
   ur_rtde::RobotiqGripper * ur_rtde_gripper_;
   std::string ip_;
   int port_;
+  int dof = 1;
   std::vector<double> state_ = {0};
   std::vector<double> command_ = {0};
 

@@ -14,6 +14,42 @@ void GripperRobotiq::connect()
   state_ = getPosition();
 }
 
+void GripperRobotiq::control()
+{
+  std::vector<double> last_sent_pos = command_;
+  std::vector<double> last_target_pos = command_;
+  std::vector<double> command = command_;
+
+  const float steady_threshold = 0.001f;
+  int stable_count = 0;
+  const int stable_required = 5;
+
+  auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
+  {
+    for(size_t i = 0; i < a.size(); i++)
+    {
+      if(std::abs(a[i] - b[i]) > threshold) return true;
+    }
+    return false;
+  };
+
+  if(vectorDiff(command, last_target_pos, steady_threshold))
+  {
+    stable_count = 0;
+    last_target_pos = command;
+  }
+  else
+  {
+    stable_count++;
+  }
+
+  if(stable_count >= stable_required && vectorDiff(command, last_sent_pos, steady_threshold))
+  {
+    setPosition(command);
+    last_sent_pos = command;
+  }
+}
+
 void GripperRobotiq::setPosition(const std::vector<double> & position)
 {
   auto target = std::clamp(position[0], 0.0, 0.725);
@@ -111,6 +147,11 @@ std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & v
 void GripperRobotiq::autoCalibrate()
 {
   ur_rtde_gripper_->autoCalibrate();
+}
+
+int GripperRobotiq::getDOF()
+{
+  return dof;
 }
 
 // TODO: add mutex

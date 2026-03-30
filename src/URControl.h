@@ -18,13 +18,21 @@ namespace mc_rtde
 template<ControlMode cm>
 struct URControlLoop
 {
-  URControlLoop(const std::string & name, const mc_control::Configuration & config, double cycle_s);
+  URControlLoop(const std::string & name,
+                const mc_control::Configuration & config,
+                double cycle_s,
+                std::vector<std::thread> & thread_pool);
 
   void init(mc_control::MCGlobalController & controller);
 
   void attachGripper(const std::string tool_name, const mc_control::Configuration & tool_config);
 
-  void setActiveRobot(mc_control::MCGlobalController & controller, std::string & active_name_);
+  void setActiveRobot(mc_control::MCGlobalController & controller,
+                      std::string & active_name_,
+                      std::mutex & startM,
+                      std::condition_variable & startCV,
+                      bool & start,
+                      bool & running);
 
   void updateSensors(mc_control::MCGlobalController & controller);
 
@@ -53,15 +61,13 @@ struct URControlLoop
   }
 
 private:
+  std::vector<std::thread> & thread_pool_;
   mc_control::Configuration config_;
 
   std::string name_;
   std::string ip_;
   rbd::MultiBodyConfig command_;
   URSensorInfo state_;
-
-  std::vector<double> tools_command_;
-  std::vector<double> tools_state_;
 
   mc_rtc::Logger logger_;
   size_t sensor_id_ = 0;
@@ -71,7 +77,7 @@ private:
   double cycle_s_ = 0;
 
   std::unique_ptr<DriverBridge> driverBridge_{nullptr};
-  std::unordered_map<std::string, std::shared_ptr<GripperInterface>> grippersInterfaces_;
+  std::unordered_map<std::string, std::shared_ptr<GripperInterface>> grippersInterfaces_ = {};
   URControlType<cm> control_;
 
   // To protect against concurrent read/write between:
@@ -89,8 +95,12 @@ template<ControlMode cm>
 using URControlLoopPtr = std::unique_ptr<URControlLoop<cm>>;
 
 template<ControlMode cm>
-URControlLoop<cm>::URControlLoop(const std::string & name, const mc_control::Configuration & config, double cycle_s)
-: name_(name), config_(config), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_), cycle_s_(cycle_s)
+URControlLoop<cm>::URControlLoop(const std::string & name,
+                                 const mc_control::Configuration & config,
+                                 double cycle_s,
+                                 std::vector<std::thread> & thread_pool)
+: name_(name), config_(config), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_),
+  cycle_s_(cycle_s), thread_pool_(thread_pool)
 {
   ip_ = std::string(config_("ip"));
   std::string driverName = config_("driver", std::string{"ur_rtde"});
@@ -114,9 +124,15 @@ void URControlLoop<cm>::attachGripper(const std::string tool_name, const mc_cont
     std::string ip = tool_config("ip", std::string(ip_));
     if(!grippersInterfaces_.count(tool_name))
     {
+      mc_rtc::log::info("connecting gripper");
       auto gripper = std::make_shared<mc_rtde::GripperRobotiq>(ip, port);
       gripper->connect();
       grippersInterfaces_.try_emplace(tool_name, std::move(gripper));
+      // {
+      //   std::lock_guard<std::mutex> lock(gripperSensorMutex_);
+      //   std::vector<double> tool_state = gripper->getPosition();
+      //   gripper->setState(tool_state);
+      // }
     }
     else
       mc_rtc::log::error_and_throw("Gripper {} is already attached to the robot", tool_name);
@@ -153,18 +169,6 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
     robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
   }
 
-  // for(auto & gripper : grippersInterfaces_)
-  // {
-  //   auto & gripper_robot = controller.robots().robot(gripper.first);
-  //   gripper_state_ = gripper.second->getPosition();
-
-  //   for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
-  //   {
-  //     auto jIndex = gripper_robot.jointIndexInMBC(i);
-  //     gripper_robot.mbc().q[jIndex][0] = gripper_state_[i];
-  //   }
-  // }
-
   updateSensors(controller);
   updateControl(controller);
 
@@ -173,10 +177,15 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
 }
 
 template<ControlMode cm>
-void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controller, std::string & active_name)
+void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controller,
+                                       std::string & active_name,
+                                       std::mutex & startMutex,
+                                       std::condition_variable & startCV,
+                                       bool & startControl,
+                                       bool & running)
 {
   mc_rtc::log::info("[mc_rtde] New robot {} detected", active_name);
-
+  std::string previous_name = name_;
   name_ = active_name;
   auto & robot = controller.controller().robots().robot(name_);
   for(size_t i = 0; i < state_.qIn_.size(); ++i)
@@ -188,6 +197,9 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
 
   if(config_.has(active_name))
   {
+    grippersInterfaces_.clear();
+    // TODO: shutdown tool threads
+
     const mc_control::Configuration active_config = config_(active_name);
     for(const std::string & tool_name : active_config.keys())
     {
@@ -197,19 +209,25 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
         mc_rtc::log::error_and_throw("Tool configuration must contain 'type'");
       }
       attachGripper(tool_name, tool_config);
-    }
-    // TODO: sync tools state
-    for(auto & tool : grippersInterfaces_)
-    {
-      std::lock_guard<std::mutex> lock(gripperSensorMutex_);
-      std::vector<double> s = tool.second->getState();
-      tools_state_.insert(tools_state_.end(), s.begin(), s.end());
+      mc_rtc::log::info("ATTACHED GRIPPER");
     }
   }
   else
   {
     mc_rtc::log::warning("[mc_rtde] Robot variation {} configuration is not available", active_name);
+    name_ = previous_name;
   };
+
+  updateSensors(controller);
+  updateControl(controller);
+
+  for(auto & tool : grippersInterfaces_)
+  {
+    std::string tool_name = tool.first;
+    thread_pool_.emplace_back([this, tool_name, &startMutex, &startCV, &startControl, &running]()
+                              { this->gripperThread(tool_name, startMutex, startCV, startControl, running); });
+  }
+  mc_rtc::log::info("GRIPPER THREAD CREATED");
 }
 
 template<ControlMode cm>
@@ -237,26 +255,35 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
   // QUESTION: this code might not do what i need it to do. I need to put tools_state to mc_rtc
   // what happend when robot is ur5e_gripper?
   std::vector<double> tools_state;
-  for(auto & tool : grippersInterfaces_)
   {
     std::lock_guard<std::mutex> lock(gripperSensorMutex_);
-    std::vector<double> s = tool.second->getState();
-    tools_state.insert(tools_state.end(), s.begin(), s.end());
+    for(auto & tool : grippersInterfaces_)
+    {
+      std::vector<double> s = tool.second->getState();
+      tools_state.insert(tools_state.end(), s.begin(), s.end());
+    }
   }
-  tools_state_ = tools_state;
 
-  size_t state_idx = 0;
-  for(size_t i = 0; i < robot.mb().joints().size(); ++i)
+  size_t tool_state_idx = 0;
+  for(size_t i = 0; i < robot.refJointOrder().size(); ++i)
   {
-    const auto & j = robot.mb().joint(i);
     if(i < 6) continue;
+    const unsigned int jIndex = robot.jointIndexInMBC(i);
+    const auto & j = robot.mb().joint(jIndex);
+
     if(j.dof() == 1 && !j.isMimic())
     {
-      if(state_idx < tools_state_.size())
+      if(tool_state_idx < tools_state.size())
       {
         std::lock_guard<std::mutex> lock(updateSensorsMutex_);
-        robot.mbc().q[i][0] = tools_state_[state_idx];
-        state_idx++;
+        robot.mbc().q[i][0] = tools_state[tool_state_idx];
+        tool_state_idx++;
+      }
+      else
+      {
+        mc_rtc::log::warning("[mc_rtde] tool_state_idx {}", tool_state_idx);
+        mc_rtc::log::error("[mc_rtde] Total number of tool states: {}", tools_state.size());
+        mc_rtc::log::error_and_throw("[mc_rtde] Found many controllable joint. Did you add all tools to yaml?");
       }
     }
   }
@@ -265,24 +292,37 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
 template<ControlMode cm>
 void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controller)
 {
-  mc_rtc::log::info("updateControl");
+  mc_rtc::log::info("updateControl {}", name_);
+  std::vector<double> tools_command;
   {
     std::lock_guard<std::mutex> lock(updateControlMutex_);
     // In the same thread as MCGlobalController::run, thus we don't need synchronization here
     auto & robot = controller.robots().robot(name_);
     command_ = robot.mbc();
+
+    const auto & rjo = robot.refJointOrder();
+    for(size_t i = 6; i < rjo.size(); ++i)
+    {
+      auto jIndex = robot.jointIndexInMBC(i);
+      if(!command_.q[jIndex].empty())
+      {
+        tools_command.push_back(command_.q[jIndex][0]);
+      }
+    }
   }
-  // for(auto & gripper : grippersInterfaces_)
-  // {
-  //   auto & gripper_robot = controller.robots().robot(gripper.first);
-  //   std::lock_guard<std::mutex> glock(gripperControlMutex_);
-  //   gripper_command_.clear();
-  //   for(size_t i = 0; i < gripper_robot.refJointOrder().size(); i++)
-  //   {
-  //     auto jIndex = gripper_robot.jointIndexInMBC(i);
-  //     gripper_command_.push_back(gripper_robot.mbc().q[jIndex][0]);
-  //   }
-  // }
+
+  {
+    std::lock_guard<std::mutex> glock(gripperControlMutex_);
+    size_t tools_state_idx = 0;
+    for(auto & tool : grippersInterfaces_)
+    {
+      int dof = tool.second->getDOF();
+      std::vector<double> tool_command(tools_command.begin() + tools_state_idx,
+                                       tools_command.begin() + tools_state_idx + dof);
+      grippersInterfaces_[tool.first]->setCommand(tool_command);
+      tools_state_idx += dof;
+    }
+  }
 
   control_id_++;
 }
@@ -324,7 +364,7 @@ void URControlLoop<cm>::controlThread(mc_control::MCGlobalController & controlle
 // how to handle command_ should be implemented in GripperRobotiq.cpp (or sth), not here
 
 template<ControlMode cm>
-void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
+void URControlLoop<cm>::gripperThread(const std::string & gripper_name,
                                       std::mutex & startM,
                                       std::condition_variable & startCV,
                                       bool & start,
@@ -335,56 +375,20 @@ void URControlLoop<cm>::gripperThread(const std::string & grippe_name,
     startCV.wait(lock, [&]() { return start; });
   }
 
-  std::vector<double> last_sent_pos;
-  std::vector<double> last_target_pos;
-  {
-    std::lock_guard<std::mutex> lock(gripperControlMutex_);
-    last_sent_pos = tools_command_;
-    last_target_pos = tools_command_;
-  }
-
-  const float steady_threshold = 0.001f;
-  int stable_count = 0;
-  const int stable_required = 5;
-
   while(running)
   {
     {
       std::lock_guard<std::mutex> lock(gripperSensorMutex_);
-      tools_state_ = grippersInterfaces_[grippe_name]->getPosition();
+      std::vector<double> tool_state = grippersInterfaces_[gripper_name]->getPosition();
+      grippersInterfaces_[gripper_name]->setState(tool_state);
     }
 
-    std::vector<double> tools_command = {};
+    using namespace std::chrono;
+    auto time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     {
       std::lock_guard<std::mutex> lock(gripperControlMutex_);
-      tools_command = tools_command_;
+      grippersInterfaces_[gripper_name]->control();
     }
-
-    auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
-    {
-      for(size_t i = 0; i < a.size(); i++)
-      {
-        if(std::abs(a[i] - b[i]) > threshold) return true;
-      }
-      return false;
-    };
-
-    if(vectorDiff(tools_command, last_target_pos, steady_threshold))
-    {
-      stable_count = 0;
-      last_target_pos = tools_command;
-    }
-    else
-    {
-      stable_count++;
-    }
-
-    if(stable_count >= stable_required && vectorDiff(tools_command, last_sent_pos, steady_threshold))
-    {
-      grippersInterfaces_[grippe_name]->setPosition(tools_command);
-      last_sent_pos = tools_command;
-    }
-
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 }
