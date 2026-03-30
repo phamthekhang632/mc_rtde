@@ -268,7 +268,7 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
   for(size_t i = 0; i < robot.refJointOrder().size(); ++i)
   {
     if(i < 6) continue;
-    const unsigned int jIndex = robot.jointIndexInMBC(i);
+    size_t jIndex = robot.jointIndexInMBC(i);
     const auto & j = robot.mb().joint(jIndex);
 
     if(j.dof() == 1 && !j.isMimic())
@@ -276,7 +276,7 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
       if(tool_state_idx < tools_state.size())
       {
         std::lock_guard<std::mutex> lock(updateSensorsMutex_);
-        robot.mbc().q[i][0] = tools_state[tool_state_idx];
+        robot.mbc().q[jIndex][0] = tools_state[tool_state_idx];
         tool_state_idx++;
       }
       else

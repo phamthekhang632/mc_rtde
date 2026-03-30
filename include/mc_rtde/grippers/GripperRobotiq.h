@@ -77,6 +77,12 @@ private:
   std::vector<double> state_ = {0};
   std::vector<double> command_ = {0};
 
+  std::vector<double> last_sent_pos_ = command_;
+  std::vector<double> last_target_pos_ = command_;
+  size_t stable_count_ = 0;
+  const double steady_threshold_ = 0.001f;
+  const int stable_required_ = 5;
+
   // TODO: move gripper mutex to here
 };
 

@@ -16,14 +16,6 @@ void GripperRobotiq::connect()
 
 void GripperRobotiq::control()
 {
-  std::vector<double> last_sent_pos = command_;
-  std::vector<double> last_target_pos = command_;
-  std::vector<double> command = command_;
-
-  const float steady_threshold = 0.001f;
-  int stable_count = 0;
-  const int stable_required = 5;
-
   auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
   {
     for(size_t i = 0; i < a.size(); i++)
@@ -33,20 +25,20 @@ void GripperRobotiq::control()
     return false;
   };
 
-  if(vectorDiff(command, last_target_pos, steady_threshold))
+  if(vectorDiff(command_, last_target_pos_, steady_threshold_))
   {
-    stable_count = 0;
-    last_target_pos = command;
+    stable_count_ = 0;
+    last_target_pos_ = command_;
   }
   else
   {
-    stable_count++;
+    stable_count_++;
   }
 
-  if(stable_count >= stable_required && vectorDiff(command, last_sent_pos, steady_threshold))
+  if(stable_count_ >= stable_required_ && vectorDiff(command_, last_sent_pos_, steady_threshold_))
   {
-    setPosition(command);
-    last_sent_pos = command;
+    setPosition(command_);
+    last_sent_pos_ = command_;
   }
 }
 
