@@ -23,6 +23,42 @@ struct GripperRobotiq : public GripperInterface
   std::vector<double> getPosition() override;
   std::vector<double> getForce() override;
   std::vector<double> getSpeed() override;
+
+  /**
+   * @brief Gets the current status of the Robotiq gripper.
+   *
+   * For more defails, check [ur_rtde APT](https://sdurobotics.gitlab.io/ur_rtde/api/api.html#robotiq-gripper-api)
+   *
+   * @param vars Accepted variable names:
+   *
+   * - `"ACT"` : activate (1 while activated, can be reset to clear fault status)
+   *
+   * - `"GTO"` : go to (will perform go to with the actions set in pos, for, spe)
+   *
+   * - `"ATR"` : auto-release (emergency slow move)
+   *
+   * - `"ARD"` : auto-release direction (open(1) or close(0) during auto-release)
+   *
+   * - `"FOR"` : force (0.0-1.0)
+   *
+   * - `"SPE"` : speed (0.0-1.0)
+   *
+   * - `"POS"` : position (0.0-1.0), 1.0 = open
+   *
+   * Read only:
+   *
+   * - `"STA"` : status (0 = is reset, 1 = activating, 3 = active)
+   *
+   * - `"PRE"` : position request (echo of last commanded position)
+   *
+   * - `"OBJ"` : object detection (0 = moving, 1 = outer grip, 2 = inner grip, 3 = no object at rest)
+   *
+   * - `"FLT"` : fault (0=ok, see manual for errors if not zero)
+   *
+   * @return Values in the same order as @p vars.
+   * `"FOR"`, `"SPE"`, and `"POS"` is in
+   * [UNIT_NORMALIZED](https://sdurobotics.gitlab.io/ur_rtde/api/api.html#_CPPv4N7ur_rtde14RobotiqGripper5eUnit15UNIT_NORMALIZEDE)
+   */
   std::vector<double> getStatus(const std::vector<std::string> & vars) override;
 
   void setState(std::vector<double> state);
