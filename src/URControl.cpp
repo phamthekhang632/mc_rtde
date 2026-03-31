@@ -139,11 +139,11 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
 
   for(const auto & ur : urs)
   {
-    for(const auto & gripper : ur->grippers())
+    for(const auto & tool : ur->tools())
     {
       controller.controller().gui()->addElement(
-          {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate gripper {}", gripper.first),
-                                        [&gripper]() { gripper.second->autoCalibrate(); }));
+          {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate {}", tool.first),
+                                        [&tool]() { tool.second->autoCalibrate(); }));
     }
   }
 

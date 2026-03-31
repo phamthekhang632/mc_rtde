@@ -2,13 +2,13 @@
 
 #include <ur_rtde/robotiq_gripper.h>
 
-#include <mc_rtde/grippers/GripperInterface.h>
+#include <mc_rtde/tools/ToolInterface.h>
 
 namespace mc_rtde
 {
-struct GripperRobotiq : public GripperInterface
+struct ToolGripperRobotiq : public ToolInterface
 {
-  GripperRobotiq(const std::string & ip, int port = 63352) : ip_(ip), port_(port) {};
+  ToolGripperRobotiq(const std::string & ip, int port = 63352) : ip_(ip), port_(port) {};
   void connect() override;
 
   /**

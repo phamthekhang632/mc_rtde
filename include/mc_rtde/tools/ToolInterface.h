@@ -4,9 +4,9 @@
 
 namespace mc_rtde
 {
-struct GripperInterface
+struct ToolInterface
 {
-  virtual ~GripperInterface() = default;
+  virtual ~ToolInterface() = default;
   virtual void connect() = 0;
   virtual void control() = 0;
 

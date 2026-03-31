@@ -1,9 +1,9 @@
-#include <mc_rtde/grippers/GripperRobotiq.h>
+#include <mc_rtde/tools/ToolGripperRobotiq.h>
 
 namespace mc_rtde
 {
 
-void GripperRobotiq::connect()
+void ToolGripperRobotiq::connect()
 {
   ur_rtde_gripper_ = new ur_rtde::RobotiqGripper(ip_, port_, false);
 
@@ -14,7 +14,7 @@ void GripperRobotiq::connect()
   state_ = getPosition();
 }
 
-void GripperRobotiq::control()
+void ToolGripperRobotiq::control()
 {
   auto vectorDiff = [](const std::vector<double> & a, const std::vector<double> & b, double threshold) -> bool
   {
@@ -42,39 +42,39 @@ void GripperRobotiq::control()
   }
 }
 
-void GripperRobotiq::setPosition(const std::vector<double> & position)
+void ToolGripperRobotiq::setPosition(const std::vector<double> & position)
 {
   auto target = std::clamp(position[0], 0.0, 0.725);
   target = -target / 0.725 + 1.0; // maping [0, 0.725] to [1.0, 0.0]
   ur_rtde_gripper_->move(target);
 }
 
-void GripperRobotiq::setForce(const std::vector<double> & force)
+void ToolGripperRobotiq::setForce(const std::vector<double> & force)
 {
   ur_rtde_gripper_->setForce(force[0]);
 }
 
-void GripperRobotiq::setSpeed(const std::vector<double> & speed)
+void ToolGripperRobotiq::setSpeed(const std::vector<double> & speed)
 {
   ur_rtde_gripper_->setSpeed(speed[0]);
 }
 
-std::vector<double> GripperRobotiq::getPosition()
+std::vector<double> ToolGripperRobotiq::getPosition()
 {
   return {ur_rtde_gripper_->getCurrentPosition()};
 }
 
-std::vector<double> GripperRobotiq::getForce()
+std::vector<double> ToolGripperRobotiq::getForce()
 {
   return {(double)ur_rtde_gripper_->getVar("FOR") / 255.0};
 }
 
-std::vector<double> GripperRobotiq::getSpeed()
+std::vector<double> ToolGripperRobotiq::getSpeed()
 {
   return {(double)ur_rtde_gripper_->getVar("SPE") / 255.0};
 }
 
-std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & vars)
+std::vector<double> ToolGripperRobotiq::getStatus(const std::vector<std::string> & vars)
 {
   std::vector<double> values;
   values.reserve(vars.size());
@@ -101,33 +101,33 @@ std::vector<double> GripperRobotiq::getStatus(const std::vector<std::string> & v
   return values;
 }
 
-void GripperRobotiq::autoCalibrate()
+void ToolGripperRobotiq::autoCalibrate()
 {
   ur_rtde_gripper_->autoCalibrate();
 }
 
-int GripperRobotiq::getDOF()
+int ToolGripperRobotiq::getDOF()
 {
   return dof;
 }
 
 // TODO: add mutex
-void GripperRobotiq::setState(std::vector<double> state)
+void ToolGripperRobotiq::setState(std::vector<double> state)
 {
   state_ = state;
 };
 
-void GripperRobotiq::setCommand(std::vector<double> command)
+void ToolGripperRobotiq::setCommand(std::vector<double> command)
 {
   command_ = command;
 };
 
-std::vector<double> GripperRobotiq::getState()
+std::vector<double> ToolGripperRobotiq::getState()
 {
   return state_;
 }
 
-std::vector<double> GripperRobotiq::getCommand()
+std::vector<double> ToolGripperRobotiq::getCommand()
 {
   return command_;
 }
