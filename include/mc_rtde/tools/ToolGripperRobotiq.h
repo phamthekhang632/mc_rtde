@@ -83,7 +83,9 @@ private:
   const double steady_threshold_ = 0.001f;
   const int stable_required_ = 5;
 
-  // TODO: move gripper mutex to here
+  // TOTEST: toolMutex is privately own
+  mutable std::mutex stateMutex_;
+  mutable std::mutex commandMutex_;
 };
 
 } // namespace mc_rtde

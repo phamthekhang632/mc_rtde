@@ -55,7 +55,6 @@ struct URControlLoop
     return toolsInterfaces_;
   }
 
-  // TODO: update to single tool calibration
   void autoCalibrateTools()
   {
     for(auto & tool : toolsInterfaces_) tool.second->autoCalibrate();
@@ -87,9 +86,6 @@ private:
   // - the method URControlLoop::updateSensors called from the controller_run thread (before MCGlobalController::run)
   mutable std::mutex updateSensorsMutex_;
   mutable std::mutex updateControlMutex_;
-
-  mutable std::mutex toolSensorMutex_;
-  mutable std::mutex toolControlMutex_;
 
   std::vector<double> sensorsBuffer_ = std::vector<double>(6, 0.0);
 };
@@ -173,7 +169,6 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
 
   std::vector<double> tools_state;
   {
-    std::lock_guard<std::mutex> lock(toolSensorMutex_);
     for(auto & tool : toolsInterfaces_)
     {
       std::vector<double> s = tool.second->getState();
@@ -228,7 +223,6 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   }
 
   {
-    std::lock_guard<std::mutex> glock(toolControlMutex_);
     size_t tools_state_idx = 0;
     for(auto & tool : toolsInterfaces_)
     {
@@ -378,7 +372,6 @@ void URControlLoop<cm>::toolThread(const std::string & tool_name,
   while(running)
   {
     {
-      std::lock_guard<std::mutex> lock(toolSensorMutex_);
       std::vector<double> tool_state = toolsInterfaces_[tool_name]->getPosition();
       toolsInterfaces_[tool_name]->setState(tool_state);
     }
@@ -386,7 +379,6 @@ void URControlLoop<cm>::toolThread(const std::string & tool_name,
     using namespace std::chrono;
     auto time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     {
-      std::lock_guard<std::mutex> lock(toolControlMutex_);
       toolsInterfaces_[tool_name]->control();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));

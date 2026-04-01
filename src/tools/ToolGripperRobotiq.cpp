@@ -11,6 +11,7 @@ void ToolGripperRobotiq::connect()
   ur_rtde_gripper_->activate();
   ur_rtde_gripper_->setUnit(ur_rtde::RobotiqGripper::POSITION, ur_rtde::RobotiqGripper::UNIT_NORMALIZED);
 
+  // No need for mutex protection since gripperThread() has not been created 
   state_ = getPosition();
 }
 
@@ -25,6 +26,7 @@ void ToolGripperRobotiq::control()
     return false;
   };
 
+  std::lock_guard<std::mutex> lock(commandMutex_);
   if(vectorDiff(command_, last_target_pos_, steady_threshold_))
   {
     stable_count_ = 0;
@@ -111,24 +113,27 @@ int ToolGripperRobotiq::getDOF()
   return dof;
 }
 
-// TODO: add mutex
 void ToolGripperRobotiq::setState(std::vector<double> state)
 {
+  std::lock_guard<std::mutex> lock(stateMutex_);
   state_ = state;
 };
 
 void ToolGripperRobotiq::setCommand(std::vector<double> command)
 {
+  std::lock_guard<std::mutex> lock(commandMutex_);
   command_ = command;
 };
 
 std::vector<double> ToolGripperRobotiq::getState()
 {
+  std::lock_guard<std::mutex> lock(stateMutex_);
   return state_;
 }
 
 std::vector<double> ToolGripperRobotiq::getCommand()
 {
+  std::lock_guard<std::mutex> lock(commandMutex_);
   return command_;
 }
 
