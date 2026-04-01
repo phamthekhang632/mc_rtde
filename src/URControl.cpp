@@ -34,6 +34,13 @@ struct ControlLoopData : public ControlLoopDataBase
   ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
 
   std::vector<URControlLoopPtr<cm>> * urs;
+
+  // --- NEW SIGNAL STORAGE ---
+  std::mutex signal_mtx;
+  bool signal_received = false;
+  std::string old_robot_name = "";
+  std::string new_robot_name = "";
+  mc_rtc::Slot<std::string, std::string> replace_slot; // Keep the connection alive
 };
 
 template<ControlMode cm>
@@ -45,6 +52,18 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   loop_data->controller_ = new mc_control::MCGlobalController(qconfig);
   loop_data->ur_threads_ = new std::vector<std::thread>();
   auto & controller = *loop_data->controller_;
+
+  // Connect to the signal - works with any controller
+  auto & mc_controller = controller.controller();
+  loop_data->replace_slot = mc_controller.replaceRobot.connect(
+      [loop_data](const std::string & oldName, const std::string & newName)
+      {
+        std::lock_guard<std::mutex> lock(loop_data->signal_mtx);
+        loop_data->old_robot_name = oldName;
+        loop_data->new_robot_name = newName;
+        loop_data->signal_received = true;
+        mc_rtc::log::info("[RTDE] Signal caught: Switching from {} to {}", oldName, newName);
+      });
 
   size_t robot_count = controller.robots().size();
   mc_rtc::log::info("ROBOT_COUNT: {}", robot_count);
@@ -190,17 +209,39 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
           elapsed_t = tv.tv_sec * 1000 + tv.tv_nsec * 1e-6 - current_t;
           current_t = elapsed_t + current_t;
 
+          // TOTEST
+          // TODO: clean up
+          bool switch_needed = false;
+          std::string previous_robot = "";
+          std::string active_robot = "";
+          {
+            std::lock_guard<std::mutex> lock(loop_data->signal_mtx);
+            if(loop_data->signal_received)
+            {
+              switch_needed = true;
+              previous_robot = loop_data->old_robot_name;
+              active_robot = loop_data->new_robot_name;
+              loop_data->signal_received = false; // Reset the flag
+            }
+          }
+          if(switch_needed)
+          {
+            mc_rtc::log::success("!!! RECEIVED SIGNAL !!!");
+            for(auto & ur : urs_)
+            {
+              if(ur->activeRobot() == previous_robot)
+              {
+                mc_rtc::log::info("Switching from {} to {}", previous_robot, active_robot);
+                if(false)
+                  ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
+              }
+            }
+          }
+          // -------------------------------------------------------------------
+
           // Update from the latest available ur sensors (non blocking)
           for(auto & ur : urs_)
           {
-            // TODO: need a better detection allowing robot types to change back and forth
-            if(controller.robots().size() > robot_count)
-            {
-              // TODO: receive signal when that users want to use a different robot variation
-              robot_count = controller.robots().size();
-              std::string active_robot = "ur5e_gripper";
-              ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
-            }
             ur->updateSensors(controller);
           }
 

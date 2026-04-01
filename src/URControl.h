@@ -50,6 +50,11 @@ struct URControlLoop
                   bool & start,
                   bool & running);
 
+  std::string activeRobot()
+  {
+    return name_;
+  }
+
   std::unordered_map<std::string, std::shared_ptr<ToolInterface>> tools()
   {
     return toolsInterfaces_;
@@ -315,8 +320,8 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
   updateControl(controller);
 
   // TODO: sync tool state with robot mbc
+  // What is the different between controller.controller().robots().robot() and controller.robots().robot() ?
 
-  // TOTEST: auto calibrate gui
   controller.controller().gui()->addElement(
       {"RTDE"},
       mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", name_), [&]() { autoCalibrateTools(); }));
@@ -344,17 +349,17 @@ void URControlLoop<cm>::attachTool(const std::string tool_name, const mc_control
     std::string ip = tool_config("ip", std::string(ip_));
     if(!toolsInterfaces_.count(tool_name))
     {
-      mc_rtc::log::info("connecting tool");
+      mc_rtc::log::info("[mc_rtde] connecting tool");
       auto tool = std::make_shared<mc_rtde::ToolGripperRobotiq>(ip, port);
       tool->connect();
       toolsInterfaces_.try_emplace(tool_name, std::move(tool));
     }
     else
-      mc_rtc::log::error_and_throw("Tool {} is already attached to the robot", tool_name);
+      mc_rtc::log::error_and_throw("[mc_rtde] Tool {} is already attached to the robot", tool_name);
   }
   else
   {
-    mc_rtc::log::warning("Tool type : {} is not supported", tool_config("type"));
+    mc_rtc::log::warning("[mc_rtde] Tool type : {} is not supported", tool_config("type"));
   }
 }
 
