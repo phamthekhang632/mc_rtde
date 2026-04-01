@@ -137,16 +137,6 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   controller.controller().gui()->addElement(
       {"RTDE"}, mc_rtc::gui::Button("Stop controller", [&controller]() { controller.running = false; }));
 
-  for(const auto & ur : urs)
-  {
-    for(const auto & tool : ur->tools())
-    {
-      controller.controller().gui()->addElement(
-          {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate {}", tool.first),
-                                        [&tool]() { tool.second->autoCalibrate(); }));
-    }
-  }
-
   // Start ur control loop
   static std::mutex startMutex;
   static std::condition_variable startCV;

@@ -321,7 +321,16 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
 
   // TODO: sync tool state with robot mbc
 
-  // TODO: set auto calibrate gui
+  // TOTEST: auto calibrate gui
+  controller.controller().gui()->addElement(
+      {"RTDE"},
+      mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", name_), [&]() { autoCalibrateTools(); }));
+  for(const auto & tool : toolsInterfaces_)
+  {
+    controller.controller().gui()->addElement(
+        {"RTDE"},
+        mc_rtc::gui::Button(fmt::format("Auto calibrate {}", tool.first), [&tool]() { tool.second->autoCalibrate(); }));
+  }
 
   for(auto & tool : toolsInterfaces_)
   {
