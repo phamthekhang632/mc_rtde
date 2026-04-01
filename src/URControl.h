@@ -306,8 +306,9 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
   }
   else
   {
-    mc_rtc::log::warning("[mc_rtde] Robot variation {} configuration is not available", active_name);
+    mc_rtc::log::warning("[mc_rtde] Robot variation {} configuration is not available", name_);
     name_ = previous_name;
+    mc_rtc::log::info("[mc_rtde] Keep using robot {}", name_);
   };
 
   updateSensors(controller);
