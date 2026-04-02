@@ -8,6 +8,7 @@
 #include <mc_control/mc_global_controller.h>
 #include <mc_rtc/logging.h>
 #include <mutex>
+#include <queue>
 #include <thread>
 
 #include <boost/program_options.hpp>
@@ -35,12 +36,20 @@ struct ControlLoopData : public ControlLoopDataBase
 
   std::vector<URControlLoopPtr<cm>> * urs;
 
-  // --- NEW SIGNAL STORAGE ---
-  std::mutex signal_mtx;
+  mc_rtc::Slot<std::string, std::string, std::string> replace_slot;
+
+  struct ReplaceRequest
+  {
+    std::string old_robot_name;
+    std::string new_robot_name;
+    std::string ip;
+  };
+  std::queue<ReplaceRequest> replace_queue;
   bool signal_received = false;
-  std::string old_robot_name = "";
-  std::string new_robot_name = "";
-  mc_rtc::Slot<std::string, std::string> replace_slot; // Keep the connection alive
+  // To protect against conccurent
+  //  - write in mc_controller.replaceRobot.connect()
+  //  - read in main control loop
+  mutable std::mutex signal_mutex;
 };
 
 template<ControlMode cm>
@@ -56,13 +65,12 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   // Connect to the signal - works with any controller
   auto & mc_controller = controller.controller();
   loop_data->replace_slot = mc_controller.replaceRobot.connect(
-      [loop_data](const std::string & oldName, const std::string & newName)
+      [loop_data](const std::string & old_robot_name, const std::string & new_robot_name, const std::string & ip)
       {
-        std::lock_guard<std::mutex> lock(loop_data->signal_mtx);
-        loop_data->old_robot_name = oldName;
-        loop_data->new_robot_name = newName;
-        loop_data->signal_received = true;
-        mc_rtc::log::info("[RTDE] Signal caught: Switching from {} to {}", oldName, newName);
+        std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
+        loop_data->replace_queue.push({old_robot_name, new_robot_name, ip});
+        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {} (ip {})", old_robot_name,
+                          new_robot_name, ip);
       });
 
   size_t robot_count = controller.robots().size();
@@ -209,35 +217,41 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
           elapsed_t = tv.tv_sec * 1000 + tv.tv_nsec * 1e-6 - current_t;
           current_t = elapsed_t + current_t;
 
-          // TOTEST
-          // TODO: clean up
-          bool switch_needed = false;
-          std::string previous_robot = "";
-          std::string active_robot = "";
+          while(true)
           {
-            std::lock_guard<std::mutex> lock(loop_data->signal_mtx);
-            if(loop_data->signal_received)
+            std::string previous_robot = "";
+            std::string active_robot = "";
+            std::string ip = "";
+            bool switch_needed = false;
             {
-              switch_needed = true;
-              previous_robot = loop_data->old_robot_name;
-              active_robot = loop_data->new_robot_name;
-              loop_data->signal_received = false; // Reset the flag
+              std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
+              if(!loop_data->replace_queue.empty())
+              {
+                auto request = loop_data->replace_queue.front();
+                loop_data->replace_queue.pop();
+
+                previous_robot = request.old_robot_name;
+                active_robot = request.new_robot_name;
+                ip = request.ip;
+                switch_needed = true;
+              }
             }
-          }
-          if(switch_needed)
-          {
-            mc_rtc::log::success("!!! RECEIVED SIGNAL !!!");
+
+            if(!switch_needed) break;
+
+            // Process the replacement
             for(auto & ur : urs_)
             {
-              if(ur->activeRobot() == previous_robot)
+              auto active = ur->activeRobot();
+              if(active.first == previous_robot && (ip.empty() || active.second == ip))
               {
-                mc_rtc::log::info("Switching from {} to {}", previous_robot, active_robot);
-                if(false)
-                  ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
+                mc_rtc::log::info("[mc_rtde] Switching from {} to {} (ip: {})", previous_robot, active_robot,
+                                  ip.empty() ? "first found" : ip);
+                ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
+                break; // only switch first match
               }
             }
           }
-          // -------------------------------------------------------------------
 
           // Update from the latest available ur sensors (non blocking)
           for(auto & ur : urs_)

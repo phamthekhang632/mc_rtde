@@ -50,9 +50,9 @@ struct URControlLoop
                   bool & start,
                   bool & running);
 
-  std::string activeRobot()
+  std::pair<std::string, std::string> activeRobot()
   {
-    return name_;
+    return {name_, ip_};
   }
 
   std::unordered_map<std::string, std::shared_ptr<ToolInterface>> tools()
