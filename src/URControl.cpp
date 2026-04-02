@@ -69,8 +69,8 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       {
         std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
         loop_data->replace_queue.push({old_robot_name, new_robot_name, ip});
-        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {} (ip {})", old_robot_name,
-                          new_robot_name, ip);
+        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {} ({})", old_robot_name,
+                          new_robot_name, ip.empty() ? "first found" : ("ip: " + ip));
       });
 
   size_t robot_count = controller.robots().size();
@@ -245,8 +245,8 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               auto active = ur->activeRobot();
               if(active.first == previous_robot && (ip.empty() || active.second == ip))
               {
-                mc_rtc::log::info("[mc_rtde] Switching from {} to {} (ip: {})", previous_robot, active_robot,
-                                  ip.empty() ? "first found" : ip);
+                mc_rtc::log::info("[mc_rtde] Switching from {} to {} ({})", previous_robot, active_robot,
+                                  ip.empty() ? "first found" : ("ip: " + ip));
                 ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
                 break; // only switch first match
               }

@@ -282,7 +282,6 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
                                        bool & startControl,
                                        bool & running)
 {
-  mc_rtc::log::info("[mc_rtde] New robot {} detected", active_name);
   std::string previous_name = name_;
   name_ = active_name;
   auto & robot = controller.controller().robots().robot(name_);
@@ -349,7 +348,7 @@ void URControlLoop<cm>::attachTool(const std::string tool_name, const mc_control
     std::string ip = tool_config("ip", std::string(ip_));
     if(!toolsInterfaces_.count(tool_name))
     {
-      mc_rtc::log::info("[mc_rtde] connecting tool");
+      mc_rtc::log::info("[mc_rtde] Connecting tool {}", tool_name);
       auto tool = std::make_shared<mc_rtde::ToolGripperRobotiq>(ip, port);
       tool->connect();
       toolsInterfaces_.try_emplace(tool_name, std::move(tool));
