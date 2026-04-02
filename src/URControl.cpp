@@ -134,7 +134,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
             auto ur = std::unique_ptr<URControlLoop<cm>>(
-                new URControlLoop<cm>(robot.name(), robotConfig, cycle_s, *loop_data->ur_threads_));
+                new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });

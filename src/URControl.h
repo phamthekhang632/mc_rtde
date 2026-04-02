@@ -18,10 +18,7 @@ namespace mc_rtde
 template<ControlMode cm>
 struct URControlLoop
 {
-  URControlLoop(const std::string & name,
-                const mc_control::Configuration & config,
-                double cycle_s,
-                std::vector<std::thread> & thread_pool);
+  URControlLoop(const std::string & name, const mc_control::Configuration & config, double cycle_s);
 
   void init(mc_control::MCGlobalController & controller);
 
@@ -66,7 +63,6 @@ struct URControlLoop
   }
 
 private:
-  std::vector<std::thread> & thread_pool_;
   mc_control::Configuration config_;
 
   std::string name_;
@@ -85,6 +81,8 @@ private:
   URControlType<cm> control_;
 
   std::unordered_map<std::string, std::shared_ptr<ToolInterface>> toolsInterfaces_ = {};
+  std::vector<std::thread> toolsThreads_ = {};
+  std::atomic<bool> tools_running_{false};
 
   // To protect against concurrent read/write between:
   // - the thread URControlLoop::controlThread
@@ -99,12 +97,8 @@ template<ControlMode cm>
 using URControlLoopPtr = std::unique_ptr<URControlLoop<cm>>;
 
 template<ControlMode cm>
-URControlLoop<cm>::URControlLoop(const std::string & name,
-                                 const mc_control::Configuration & config,
-                                 double cycle_s,
-                                 std::vector<std::thread> & thread_pool)
-: name_(name), config_(config), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_),
-  cycle_s_(cycle_s), thread_pool_(thread_pool)
+URControlLoop<cm>::URControlLoop(const std::string & name, const mc_control::Configuration & config, double cycle_s)
+: name_(name), config_(config), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_), cycle_s_(cycle_s)
 {
   ip_ = std::string(config_("ip"));
   std::string driverName = config_("driver", std::string{"ur_rtde"});
@@ -294,9 +288,25 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
 
   if(config_.has(active_name))
   {
+    // Clear previous tools' threads, interfaces, and gui
+    tools_running_ = false;
+    for(auto & thread : toolsThreads_)
+    {
+      if(thread.joinable())
+      {
+        thread.join();
+      }
+    }
+    toolsThreads_.clear();
     toolsInterfaces_.clear();
-    // TODO: shutdown tool threads
 
+    controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate all tools of {}", name_));
+    for(const auto & tool : toolsInterfaces_)
+    {
+      controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate {}", tool.first));
+    }
+
+    // Set up new set of tools
     const mc_control::Configuration active_config = config_(active_name);
     for(const std::string & tool_name : active_config.keys())
     {
@@ -321,21 +331,22 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
   // TODO: sync tool state with robot mbc
   // What is the different between controller.controller().robots().robot() and controller.robots().robot() ?
 
-  controller.controller().gui()->addElement(
-      {"RTDE"},
-      mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", name_), [&]() { autoCalibrateTools(); }));
+  if(!toolsInterfaces_.empty())
+  {
+    controller.controller().gui()->addElement(
+        {"RTDE"},
+        mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", name_), [&]() { autoCalibrateTools(); }));
+  }
+  tools_running_ = true;
   for(const auto & tool : toolsInterfaces_)
   {
     controller.controller().gui()->addElement(
         {"RTDE"},
         mc_rtc::gui::Button(fmt::format("Auto calibrate {}", tool.first), [&tool]() { tool.second->autoCalibrate(); }));
-  }
 
-  for(auto & tool : toolsInterfaces_)
-  {
     std::string tool_name = tool.first;
-    thread_pool_.emplace_back([this, tool_name, &startMutex, &startCV, &startControl, &running]()
-                              { this->toolThread(tool_name, startMutex, startCV, startControl, running); });
+    toolsThreads_.emplace_back([this, tool_name, &startMutex, &startCV, &startControl, &running]()
+                               { this->toolThread(tool_name, startMutex, startCV, startControl, running); });
   }
 }
 
@@ -374,7 +385,7 @@ void URControlLoop<cm>::toolThread(const std::string & tool_name,
     startCV.wait(lock, [&]() { return start; });
   }
 
-  while(running)
+  while(running && tools_running_)
   {
     {
       std::vector<double> tool_state = toolsInterfaces_[tool_name]->getPosition();
