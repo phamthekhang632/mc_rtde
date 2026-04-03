@@ -36,13 +36,12 @@ struct ControlLoopData : public ControlLoopDataBase
 
   std::vector<URControlLoopPtr<cm>> * urs;
 
-  mc_rtc::Slot<std::string, std::string, std::string> replace_slot;
+  mc_rtc::Slot<std::string, std::string> replace_slot;
 
   struct ReplaceRequest
   {
     std::string old_robot_name;
     std::string new_robot_name;
-    std::string ip;
   };
   std::queue<ReplaceRequest> replace_queue;
   bool signal_received = false;
@@ -65,12 +64,11 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   // Connect to the signal - works with any controller
   auto & mc_controller = controller.controller();
   loop_data->replace_slot = mc_controller.replaceRobot.connect(
-      [loop_data](const std::string & old_robot_name, const std::string & new_robot_name, const std::string & ip)
+      [loop_data](const std::string & old_robot_name, const std::string & new_robot_name)
       {
         std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
-        loop_data->replace_queue.push({old_robot_name, new_robot_name, ip});
-        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {} ({})", old_robot_name,
-                          new_robot_name, ip.empty() ? "first found" : ("ip: " + ip));
+        loop_data->replace_queue.push({old_robot_name, new_robot_name});
+        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {}", old_robot_name, new_robot_name);
       });
 
   size_t robot_count = controller.robots().size();
@@ -219,8 +217,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
           while(true)
           {
             std::string previous_robot = "";
-            std::string active_robot = "";
-            std::string ip = "";
+            std::string new_robot = "";
             bool switch_needed = false;
             {
               std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
@@ -230,8 +227,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
                 loop_data->replace_queue.pop();
 
                 previous_robot = request.old_robot_name;
-                active_robot = request.new_robot_name;
-                ip = request.ip;
+                new_robot = request.new_robot_name;
                 switch_needed = true;
               }
             }
@@ -241,13 +237,12 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
             // Process the replacement
             for(auto & ur : urs_)
             {
-              auto active = ur->activeRobot();
-              if(active.first == previous_robot && (ip.empty() || active.second == ip))
+              std::string active = ur->activeName();
+              if(active == previous_robot)
               {
-                mc_rtc::log::info("[mc_rtde] Switching from {} to {} ({})", previous_robot, active_robot,
-                                  ip.empty() ? "first found" : ("ip: " + ip));
-                ur->setActiveRobot(controller, active_robot, startMutex, startCV, startControl, controller.running);
-                break; // only switch first match
+                mc_rtc::log::info("[mc_rtde] Switching from {} to {}", previous_robot, new_robot);
+                ur->setActiveRobot(controller, new_robot, startMutex, startCV, startControl, controller.running);
+                break;
               }
             }
           }
