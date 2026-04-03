@@ -20,7 +20,7 @@ namespace mc_rtde
 struct ControlLoopDataBase
 {
 
-  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr) {};
+  ControlLoopDataBase(ControlMode cm) : cm_(cm), controller_(nullptr), ur_threads_(nullptr){};
 
   ControlMode cm_;
   mc_control::MCGlobalController * controller_;
@@ -32,7 +32,7 @@ struct ControlLoopDataBase
 template<ControlMode cm>
 struct ControlLoopData : public ControlLoopDataBase
 {
-  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr) {};
+  ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
 
   std::vector<URControlLoopPtr<cm>> * urs;
 
@@ -133,8 +133,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               std::unique_lock<std::mutex> lock(ur_init_mutex);
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
-            auto ur = std::unique_ptr<URControlLoop<cm>>(
-                new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
+            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });

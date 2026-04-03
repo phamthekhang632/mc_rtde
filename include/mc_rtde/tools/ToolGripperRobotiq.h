@@ -8,7 +8,7 @@ namespace mc_rtde
 {
 struct ToolGripperRobotiq : public ToolInterface
 {
-  ToolGripperRobotiq(const std::string & ip, int port = 63352) : ip_(ip), port_(port) {};
+  ToolGripperRobotiq(const std::string & ip, int port = 63352) : ip_(ip), port_(port){};
   void connect() override;
 
   /**
