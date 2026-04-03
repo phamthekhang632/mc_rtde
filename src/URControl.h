@@ -33,7 +33,7 @@ struct URControlLoop
                      bool & running);
 
   void setActiveRobot(mc_control::MCGlobalController & controller,
-                      std::string & active_name_,
+                      std::string & active_name,
                       std::mutex & startM,
                       std::condition_variable & startCV,
                       bool & start,
@@ -49,7 +49,7 @@ struct URControlLoop
 
   std::pair<std::string, std::string> activeRobot()
   {
-    return {name_, ip_};
+    return {active_name_, ip_};
   }
 
   std::unordered_map<std::string, std::shared_ptr<ToolInterface>> tools()
@@ -65,7 +65,8 @@ struct URControlLoop
 private:
   mc_control::Configuration config_;
 
-  std::string name_;
+  const std::string name_;
+  std::string active_name_;
   std::string ip_;
   rbd::MultiBodyConfig command_;
   URSensorInfo state_;
@@ -100,6 +101,7 @@ template<ControlMode cm>
 URControlLoop<cm>::URControlLoop(const std::string & name, const mc_control::Configuration & config, double cycle_s)
 : name_(name), config_(config), logger_(mc_rtc::Logger::Policy::THREADED, "/tmp", "mc-rtde-" + name_), cycle_s_(cycle_s)
 {
+  active_name_ = name_;
   ip_ = std::string(config_("ip"));
   std::string driverName = config_("driver", std::string{"ur_rtde"});
   Driver driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
@@ -116,7 +118,7 @@ URControlLoop<cm>::URControlLoop(const std::string & name, const mc_control::Con
 template<ControlMode cm>
 void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
 {
-  mc_rtc::log::info("init {}", name_);
+  mc_rtc::log::info("init {}", active_name_);
 
   // No need for thread synchronization here as the URControlLoop::controlThread is not yet running
 
@@ -127,8 +129,8 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
   logger_.addLogEntry("control_id", [this]() { return control_id_; });
   logger_.addLogEntry("delay", [this]() { return delay_; });
 
-  auto & robot = controller.controller().robots().robot(name_);
-  auto & real = controller.controller().realRobots().robot(name_);
+  auto & robot = controller.controller().robots().robot(active_name_);
+  auto & real = controller.controller().realRobots().robot(active_name_);
   state_.qIn_ = driverBridge_->getActualQ();
   state_.torqIn_ = driverBridge_->getJointTorques();
   const auto & rjo = robot.refJointOrder();
@@ -149,7 +151,7 @@ void URControlLoop<cm>::init(mc_control::MCGlobalController & controller)
 template<ControlMode cm>
 void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controller)
 {
-  auto & robot = controller.robots().robot(name_);
+  auto & robot = controller.robots().robot(active_name_);
   using GC = mc_control::MCGlobalController;
   using set_sensor_t = void (GC::*)(const std::string &, const std::vector<double> &);
   auto updateSensor = [&controller, &robot, this](set_sensor_t set_sensor, const std::vector<double> & data)
@@ -207,7 +209,7 @@ void URControlLoop<cm>::updateControl(mc_control::MCGlobalController & controlle
   {
     std::lock_guard<std::mutex> lock(updateControlMutex_);
     // In the same thread as MCGlobalController::run, thus we don't need synchronization here
-    auto & robot = controller.robots().robot(name_);
+    auto & robot = controller.robots().robot(active_name_);
     command_ = robot.mbc();
 
     const auto & rjo = robot.refJointOrder();
@@ -264,7 +266,7 @@ void URControlLoop<cm>::controlThread(mc_control::MCGlobalController & controlle
     }
     using namespace std::chrono;
     auto time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    control_.control(*driverBridge_, controller.robots().robot(name_), command);
+    control_.control(*driverBridge_, controller.robots().robot(active_name_), command);
   }
 }
 
@@ -276,9 +278,9 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
                                        bool & startControl,
                                        bool & running)
 {
-  std::string previous_name = name_;
-  name_ = active_name;
-  auto & robot = controller.controller().robots().robot(name_);
+  std::string previous_name = active_name_;
+  active_name_ = active_name;
+  auto & robot = controller.controller().robots().robot(active_name_);
   for(size_t i = 0; i < state_.qIn_.size(); ++i)
   {
     auto jIndex = robot.jointIndexInMBC(i);
@@ -286,27 +288,30 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
     robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
   }
 
-  if(config_.has(active_name))
+  // Clear previous tools' threads, interfaces, and gui
+  tools_running_ = false;
+  for(auto & thread : toolsThreads_)
   {
-    // Clear previous tools' threads, interfaces, and gui
-    tools_running_ = false;
-    for(auto & thread : toolsThreads_)
+    if(thread.joinable())
     {
-      if(thread.joinable())
-      {
-        thread.join();
-      }
+      thread.join();
     }
-    toolsThreads_.clear();
-    toolsInterfaces_.clear();
+  }
+  toolsThreads_.clear();
+  toolsInterfaces_.clear();
+  controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate all tools of {}", active_name_));
+  for(const auto & tool : toolsInterfaces_)
+  {
+    controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate {}", tool.first));
+  }
 
-    controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate all tools of {}", name_));
-    for(const auto & tool : toolsInterfaces_)
-    {
-      controller.controller().gui()->removeElement({"RTDE"}, fmt::format("Auto calibrate {}", tool.first));
-    }
-
-    // Set up new set of tools
+  // Set up new robot and its tools
+  if(active_name_ == name_)
+  {
+    mc_rtc::log::info("Using default configuration {}", active_name_);
+  }
+  else if(config_.has(active_name_))
+  {
     const mc_control::Configuration active_config = config_(active_name);
     for(const std::string & tool_name : active_config.keys())
     {
@@ -320,9 +325,9 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
   }
   else
   {
-    mc_rtc::log::warning("[mc_rtde] Robot variation {} configuration is not available", name_);
-    name_ = previous_name;
-    mc_rtc::log::info("[mc_rtde] Keep using robot {}", name_);
+    mc_rtc::log::warning("[mc_rtde] Robot variation {} configuration is not available", active_name_);
+    active_name_ = previous_name;
+    mc_rtc::log::info("[mc_rtde] Keep using robot {}", active_name_);
   };
 
   updateSensors(controller);
@@ -334,8 +339,8 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
   if(!toolsInterfaces_.empty())
   {
     controller.controller().gui()->addElement(
-        {"RTDE"},
-        mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", name_), [&]() { autoCalibrateTools(); }));
+        {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate all tools of {}", active_name_),
+                                      [&]() { autoCalibrateTools(); }));
   }
   tools_running_ = true;
   for(const auto & tool : toolsInterfaces_)
