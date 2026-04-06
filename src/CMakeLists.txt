@@ -3,7 +3,7 @@ set(CMAKE_INSTALL_RPATH "$ENV{LD_LIBRARY_PATH}")
 
 set(HEADERS URControlType.h URControl.h ControlMode.h thread.h)
 set(SOURCES main.cpp URControl.cpp DriverBridgeURModernDriver.cpp
-            grippers/GripperRobotiq.cpp)
+            tools/ToolGripperRobotiq.cpp)
 
 include_directories(include)
 

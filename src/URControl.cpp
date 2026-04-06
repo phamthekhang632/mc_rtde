@@ -8,6 +8,7 @@
 #include <mc_control/mc_global_controller.h>
 #include <mc_rtc/logging.h>
 #include <mutex>
+#include <queue>
 #include <thread>
 
 #include <boost/program_options.hpp>
@@ -34,6 +35,20 @@ struct ControlLoopData : public ControlLoopDataBase
   ControlLoopData() : ControlLoopDataBase(cm), urs(nullptr){};
 
   std::vector<URControlLoopPtr<cm>> * urs;
+
+  mc_rtc::Slot<std::string, std::string> replace_slot;
+
+  struct ReplaceRequest
+  {
+    std::string old_robot_name;
+    std::string new_robot_name;
+  };
+  std::queue<ReplaceRequest> replace_queue;
+  bool signal_received = false;
+  // To protect against conccurent
+  //  - write in mc_controller.replaceRobot.connect()
+  //  - read in main control loop
+  mutable std::mutex signal_mutex;
 };
 
 template<ControlMode cm>
@@ -45,6 +60,19 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   loop_data->controller_ = new mc_control::MCGlobalController(qconfig);
   loop_data->ur_threads_ = new std::vector<std::thread>();
   auto & controller = *loop_data->controller_;
+
+  // Connect to the signal - works with any controller
+  auto & mc_controller = controller.controller();
+  loop_data->replace_slot = mc_controller.replaceRobot.connect(
+      [loop_data](const std::string & old_robot_name, const std::string & new_robot_name)
+      {
+        std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
+        loop_data->replace_queue.push({old_robot_name, new_robot_name});
+        mc_rtc::log::info("[mc_rtde] Signal caught: Request switching from {} to {}", old_robot_name, new_robot_name);
+      });
+
+  size_t robot_count = controller.robots().size();
+  mc_rtc::log::info("ROBOT_COUNT: {}", robot_count);
 
   double cycle_s = rtdeConfig("RobotTimestep");
   double controller_s = controller.controller().timeStep;
@@ -99,45 +127,17 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
       ur_init_thread.emplace_back(
           [&, robotConfig]()
           {
-            auto driverName = robotConfig("driver", std::string{"ur_rtde"});
-            auto driver = (driverName == "ur_rtde") ? Driver::ur_rtde : Driver::ur_modern_driver;
-
             {
               std::unique_lock<std::mutex> lock(ur_init_mutex);
               ur_init_cv.wait(lock, [&ur_init_ready]() { return ur_init_ready; });
             }
-
-            auto ur = std::unique_ptr<URControlLoop<cm>>(
-                new URControlLoop<cm>(driver, robot.name(), robotConfig("ip"), cycle_s));
-
-            if(robotConfig.has("gripper"))
-            {
-              mc_control::Configuration gripper_config;
-              gripper_config = robotConfig("gripper");
-
-              if(!gripper_config.has("name") || !gripper_config.has("type"))
-              {
-                mc_rtc::log::error_and_throw("Gripper configuration must contain 'name' and 'type'");
-              }
-
-              // Gripper is consider as a robot here
-              if(robots.hasRobot(gripper_config("name")))
-              {
-                ur->attachGripper(gripper_config);
-              }
-              else
-              {
-                mc_rtc::log::error("Gripper name doesn't match with robot's gripper name");
-              }
-            }
-
+            auto ur = std::unique_ptr<URControlLoop<cm>>(new URControlLoop<cm>(robot.name(), robotConfig, cycle_s));
             std::unique_lock<std::mutex> lock(ur_init_mutex);
             urs.emplace_back(std::move(ur));
           });
     }
     else
     {
-      // Gripper will trigger this warning
       mc_rtc::log::warning("The loaded controller uses an actuated robot that is not configured and not ignored: {}",
                            robot.name());
     }
@@ -161,16 +161,6 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   controller.controller().gui()->addElement(
       {"RTDE"}, mc_rtc::gui::Button("Stop controller", [&controller]() { controller.running = false; }));
 
-  for(const auto & ur : urs)
-  {
-    for(const auto & gripper : ur->grippers())
-    {
-      controller.controller().gui()->addElement(
-          {"RTDE"}, mc_rtc::gui::Button(fmt::format("Auto calibrate gripper {}", gripper.first),
-                                        [&gripper]() { gripper.second->autoCalibrate(); }));
-    }
-  }
-
   // Start ur control loop
   static std::mutex startMutex;
   static std::condition_variable startCV;
@@ -182,14 +172,6 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
     // until the first control command has been computed (by MCGlobalController::run)
     loop_data->ur_threads_->emplace_back(
         [&]() { ur->controlThread(controller, startMutex, startCV, startControl, controller.running); });
-
-    for(auto & gripper : ur->grippers())
-    {
-      std::string gripper_name = gripper.first;
-      loop_data->ur_threads_->emplace_back(
-          [&, gripper_name]()
-          { ur->gripperThread(gripper_name, startMutex, startCV, startControl, controller.running); });
-    }
   }
 
   // Create main mc_rtc control thread:
@@ -202,7 +184,7 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
   // This frequency must be a multiple (n_steps) of cycle_ns as lower frequencies
   // are simply achieved by calling MCGlobalController every n_steps iterations of the low-level control loop
   loop_data->controller_run_ = new std::thread(
-      [loop_data, n_steps, &interrupt]()
+      [loop_data, n_steps, &interrupt, &robot_count]()
       {
         auto controller_ptr = loop_data->controller_;
         auto & controller = *controller_ptr;
@@ -231,6 +213,50 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
           clock_gettime(CLOCK_REALTIME, &tv);
           elapsed_t = tv.tv_sec * 1000 + tv.tv_nsec * 1e-6 - current_t;
           current_t = elapsed_t + current_t;
+
+          while(true)
+          {
+            std::string previous_robot = "";
+            std::string new_robot = "";
+            bool switch_needed = false;
+            {
+              std::lock_guard<std::mutex> lock(loop_data->signal_mutex);
+              if(!loop_data->replace_queue.empty())
+              {
+                auto request = loop_data->replace_queue.front();
+                loop_data->replace_queue.pop();
+
+                previous_robot = request.old_robot_name;
+                new_robot = request.new_robot_name;
+                switch_needed = true;
+              }
+            }
+
+            // Process the replacement
+            if(switch_needed)
+            {
+              bool switched = false;
+              for(auto & ur : urs_)
+              {
+                std::string active = ur->activeName();
+                if(active == previous_robot)
+                {
+                  mc_rtc::log::info("[mc_rtde] Switching from {} to {}", previous_robot, new_robot);
+                  ur->setActiveRobot(controller, new_robot, startMutex, startCV, startControl, controller.running);
+                  switched = true;
+                  break;
+                }
+              }
+              if(!switched)
+              {
+                mc_rtc::log::error("[mc_rtde] Cannot find robot {} ", previous_robot);
+              }
+            }
+            else
+            {
+              break;
+            }
+          }
 
           // Update from the latest available ur sensors (non blocking)
           for(auto & ur : urs_)
