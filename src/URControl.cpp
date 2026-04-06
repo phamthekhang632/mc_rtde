@@ -232,18 +232,29 @@ void * global_thread_init(mc_control::MCGlobalController::GlobalConfiguration & 
               }
             }
 
-            if(!switch_needed) break;
-
             // Process the replacement
-            for(auto & ur : urs_)
+            if(switch_needed)
             {
-              std::string active = ur->activeName();
-              if(active == previous_robot)
+              bool switched = false;
+              for(auto & ur : urs_)
               {
-                mc_rtc::log::info("[mc_rtde] Switching from {} to {}", previous_robot, new_robot);
-                ur->setActiveRobot(controller, new_robot, startMutex, startCV, startControl, controller.running);
-                break;
+                std::string active = ur->activeName();
+                if(active == previous_robot)
+                {
+                  mc_rtc::log::info("[mc_rtde] Switching from {} to {}", previous_robot, new_robot);
+                  ur->setActiveRobot(controller, new_robot, startMutex, startCV, startControl, controller.running);
+                  switched = true;
+                  break;
+                }
               }
+              if(!switched)
+              {
+                mc_rtc::log::error("[mc_rtde] Cannot find robot {} ", previous_robot);
+              }
+            }
+            else
+            {
+              break;
             }
           }
 
