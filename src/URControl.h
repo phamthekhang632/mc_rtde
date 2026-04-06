@@ -169,12 +169,10 @@ void URControlLoop<cm>::updateSensors(mc_control::MCGlobalController & controlle
   }
 
   std::vector<double> tools_state;
+  for(auto & tool : toolsInterfaces_)
   {
-    for(auto & tool : toolsInterfaces_)
-    {
-      std::vector<double> s = tool.second->getState();
-      tools_state.insert(tools_state.end(), s.begin(), s.end());
-    }
+    std::vector<double> s = tool.second->getState();
+    tools_state.insert(tools_state.end(), s.begin(), s.end());
   }
 
   size_t tool_state_idx = 0;
@@ -280,13 +278,6 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
 {
   std::string previous_name = active_name_;
   active_name_ = active_name;
-  auto & robot = controller.controller().robots().robot(active_name_);
-  for(size_t i = 0; i < state_.qIn_.size(); ++i)
-  {
-    auto jIndex = robot.jointIndexInMBC(i);
-    robot.mbc().q[jIndex][0] = state_.qIn_[i];
-    robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
-  }
 
   // Clear previous tools' threads, interfaces, and gui
   tools_running_ = false;
@@ -330,12 +321,34 @@ void URControlLoop<cm>::setActiveRobot(mc_control::MCGlobalController & controll
     mc_rtc::log::info("[mc_rtde] Keep using robot {}", active_name_);
   };
 
+  // Sync new robot's states
+  std::vector<double> tools_state;
+  for(auto & tool : toolsInterfaces_)
+  {
+    std::vector<double> s = tool.second->getState();
+    tools_state.insert(tools_state.end(), s.begin(), s.end());
+  }
+  auto & robot = controller.controller().robots().robot(active_name_);
+  const auto & rjo = robot.refJointOrder();
+  for(size_t i = 0; i < rjo.size(); ++i)
+  {
+    auto jIndex = robot.jointIndexInMBC(i);
+    if(i < state_.qIn_.size())
+    {
+      robot.mbc().q[jIndex][0] = state_.qIn_[i];
+      robot.mbc().jointTorque[jIndex][0] = state_.torqIn_[i];
+    }
+    else
+    {
+      // TOFIX: the rest of the joint in q need to be initialized as well even if they are mimic
+      robot.mbc().q[jIndex][0] = tools_state[i - 6];
+    }
+  }
+
   updateSensors(controller);
   updateControl(controller);
 
-  // TODO: sync tool state with robot mbc
-  // What is the different between controller.controller().robots().robot() and controller.robots().robot() ?
-
+  // Set up tools' threads and gui
   if(!toolsInterfaces_.empty())
   {
     controller.controller().gui()->addElement(
